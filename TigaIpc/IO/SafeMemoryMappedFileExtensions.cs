@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 namespace TigaIpc.IO;
 
 /// <summary>
-/// 为TigaMemoryMappedFile提供安全读写的扩展方法
+/// 为ITigaMemoryMappedFile提供安全读写的扩展方法
 /// </summary>
 public static class SafeMemoryMappedFileExtensions
 {
@@ -18,7 +18,7 @@ public static class SafeMemoryMappedFileExtensions
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>操作结果或默认值</returns>
     public static T TryRead<T>(
-        this ITigaMemoryMappedFile memoryMappedFile, 
+        this ITigaMemoryMappedFile memoryMappedFile,
         Func<MemoryStream, T> readData,
         T defaultValue,
         ILogger? logger = null,
@@ -72,7 +72,7 @@ public static class SafeMemoryMappedFileExtensions
             {
                 if (i == retryCount - 1)
                 {
-                    logger?.LogWarning(ex, "Timeout occurred while writing to memory mapped file (attempt {Attempt}/{MaxAttempts})", 
+                    logger?.LogWarning(ex, "Timeout occurred while writing to memory mapped file (attempt {Attempt}/{MaxAttempts})",
                         i + 1, retryCount);
                 }
                 // 在下一次重试前稍微延迟
@@ -88,7 +88,7 @@ public static class SafeMemoryMappedFileExtensions
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Error occurred while writing to memory mapped file (attempt {Attempt}/{MaxAttempts})", 
+                logger?.LogError(ex, "Error occurred while writing to memory mapped file (attempt {Attempt}/{MaxAttempts})",
                     i + 1, retryCount);
                 if (i < retryCount - 1)
                 {
@@ -98,7 +98,7 @@ public static class SafeMemoryMappedFileExtensions
         }
         return false;
     }
-    
+
     /// <summary>
     /// 安全地读写内存映射文件，即使在出现异常时也能保证资源释放
     /// </summary>
@@ -126,7 +126,7 @@ public static class SafeMemoryMappedFileExtensions
             {
                 if (i == retryCount - 1)
                 {
-                    logger?.LogWarning(ex, "Timeout occurred during ReadWrite operation on memory mapped file (attempt {Attempt}/{MaxAttempts})", 
+                    logger?.LogWarning(ex, "Timeout occurred during ReadWrite operation on memory mapped file (attempt {Attempt}/{MaxAttempts})",
                         i + 1, retryCount);
                 }
                 // 在下一次重试前稍微延迟
@@ -142,7 +142,7 @@ public static class SafeMemoryMappedFileExtensions
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Error occurred during ReadWrite operation on memory mapped file (attempt {Attempt}/{MaxAttempts})", 
+                logger?.LogError(ex, "Error occurred during ReadWrite operation on memory mapped file (attempt {Attempt}/{MaxAttempts})",
                     i + 1, retryCount);
                 if (i < retryCount - 1)
                 {
@@ -152,4 +152,4 @@ public static class SafeMemoryMappedFileExtensions
         }
         return false;
     }
-} 
+}

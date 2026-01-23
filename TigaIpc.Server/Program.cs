@@ -2,6 +2,7 @@ using MessagePack;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using System.Runtime.Versioning;
+using TigaIpc;
 using TigaIpc.Core;
 using TigaIpc.Messaging;
 
@@ -16,10 +17,15 @@ class Program
     {
         Console.WriteLine("TigaIpc server starting...");
 
-        var ipcOptions = new TigaIpcOptions { Name = ChannelName }.WithRobustConfiguration();
-        await using var messageBus = new TigaMessageBus(
+        var mappingDir = Path.Combine(Path.GetTempPath(), "tiga-ipc");
+        var ipcOptions = new TigaIpcOptions
+        {
+            Name = ChannelName,
+            FileMappingDirectory = mappingDir,
+        }.WithRobustConfiguration();
+        await using var messageBus = new TigaPerClientServer(
             ChannelName,
-            MappingType.Memory,
+            MappingType.File,
             Options.Create(ipcOptions));
 
         var cts = new CancellationTokenSource();
@@ -36,27 +42,27 @@ class Program
 
         messageBus.Register("method", payload =>
         {
-            Console.WriteLine($"[Invoke] method => {payload}");
+            Console.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss:fff}] [Invoke] method => {payload}");
             return $"Echo: {payload}";
         });
 
         messageBus.RegisterAsync<CookieParams, EventResult>("GetAllCookie", async (payload, token) =>
         {
-            Console.WriteLine($"[Invoke] GetAllCookie => {JsonConvert.SerializeObject(payload)}");
+            Console.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss:fff}] [Invoke] GetAllCookie => {JsonConvert.SerializeObject(payload)}");
             await Task.Delay(100, token);
             return new EventResult { Result = $"Cookie {payload?.Name ?? "unknown"} received" };
         });
 
         messageBus.RegisterAsync<EventResult>("method2", async () =>
         {
-            Console.WriteLine("[Invoke] method2");
+            Console.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss:fff}] [Invoke] method2");
             await Task.Delay(50);
             return new EventResult { Result = "Background work complete" };
         });
 
         messageBus.RegisterAsync("method3", async () =>
         {
-            Console.WriteLine("[Invoke] method3");
+            Console.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss:fff}] [Invoke] method3");
             await Task.Delay(50);
         });
 

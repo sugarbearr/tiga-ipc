@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "TigaIpc.TestHost": {
+      "commandName": "Project",
+      "commandLineArgs": "hold-writer-mutex test"
+    }
+  }
+}

@@ -21,9 +21,11 @@ namespace TigaIpc.Messaging
     public partial class TigaMessageBus : ITigaMessageBus
     {
         private readonly CancellationTokenSource _cancellationTokenSource = new();
-        private readonly bool _disposeFile;
         private readonly Guid _instanceId = Guid.NewGuid();
-        private readonly ITigaMemoryMappedFile _memoryMappedFile;
+        private readonly ITigaMemoryMappedFile _readFile;
+        private readonly ITigaMemoryMappedFile _writeFile;
+        private readonly bool _disposeReadFile;
+        private readonly bool _disposeWriteFile;
         private readonly TimeProvider _timeProvider;
         private readonly IOptions<TigaIpcOptions> _options;
         private readonly ConcurrentDictionary<Guid, Channel<LogEntry>> _receiverChannels = new();
@@ -38,6 +40,8 @@ namespace TigaIpc.Messaging
         private readonly ILogger<TigaMessageBus>? _logger;
         private readonly bool _enableCompression;
         private readonly int _compressionThreshold;
+        private readonly int _logBookSchemaVersion;
+        private readonly bool _allowLegacyLogBook;
 
         private readonly SemaphoreSlim _messageReaderSemaphore = new(1, 1);
         private readonly SemaphoreSlim _invokeLock = new(1, 1);
@@ -59,6 +63,12 @@ namespace TigaIpc.Messaging
         private long _invokeCount;
         private long _invokeFailureCount;
         private long _deserializationFailureCount;
+
+        private bool HasInvokeHandlers =>
+            !_eventAggregator.IsEmpty ||
+            !_asyncEventAggregator.IsEmpty ||
+            !_asyncTaskEventAggregator.IsEmpty ||
+            !_asyncGenericEventAggregator.IsEmpty;
 
         private JoinableTaskFactory JoinableTaskFactory
         {
@@ -90,22 +100,62 @@ namespace TigaIpc.Messaging
             IOptions<TigaIpcOptions>? options = null,
             ILogger<TigaMessageBus>? logger = null)
             : this(
-                CreateMemoryMappedFile(name, type, options ?? new OptionsWrapper<TigaIpcOptions>(new TigaIpcOptions()),
-                    out var resolvedOptions,
-                    out var waitFree),
-                disposeFile: true,
+                TigaMemoryMappedFileFactory.Create(
+                    name,
+                    type,
+                    options ?? new OptionsWrapper<TigaIpcOptions>(new TigaIpcOptions()),
+                    out var resolvedOptions),
+                disposeReadFile: true,
+                TigaMemoryMappedFileFactory.Create(
+                    name,
+                    type,
+                    resolvedOptions,
+                    out _),
+                disposeWriteFile: true,
                 TimeProvider.System,
                 resolvedOptions,
                 logger)
         {
             Name = name;
-            var objectPoolProvider = new DefaultObjectPoolProvider();
-            _stringBuilderPool = objectPoolProvider.CreateStringBuilderPool();
+            Println("Wait-free synchronization enabled for TigaMessageBus instance");
+        }
 
-            if (waitFree)
-            {
-                Println("Wait-free synchronization enabled for TigaMessageBus instance");
-            }
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class with separate read/write channels.
+        /// </summary>
+        /// <param name="readName">Name of the read channel.</param>
+        /// <param name="writeName">Name of the write channel.</param>
+        /// <param name="type">type.</param>
+        /// <param name="options">Options from dependency injection or an OptionsWrapper containing options.</param>
+        /// <param name="logger">logger.</param>
+#if NET
+        [SupportedOSPlatform("windows")]
+#endif
+        public TigaMessageBus(
+            string readName,
+            string writeName,
+            MappingType type = MappingType.Memory,
+            IOptions<TigaIpcOptions>? options = null,
+            ILogger<TigaMessageBus>? logger = null)
+            : this(
+                TigaMemoryMappedFileFactory.Create(
+                    readName,
+                    type,
+                    options ?? new OptionsWrapper<TigaIpcOptions>(new TigaIpcOptions()),
+                    out var resolvedOptions),
+                disposeReadFile: true,
+                TigaMemoryMappedFileFactory.Create(
+                    writeName,
+                    type,
+                    resolvedOptions,
+                    out _),
+                disposeWriteFile: true,
+                TimeProvider.System,
+                resolvedOptions,
+                logger)
+        {
+            Name = $"{readName}|{writeName}";
+            Println("Wait-free synchronization enabled for TigaMessageBus instance");
         }
 
         /// <summary>
@@ -123,7 +173,9 @@ namespace TigaIpc.Messaging
             ILogger<TigaMessageBus>? logger = null)
             : this(
                 memoryMappedFile,
-                disposeFile: false,
+                disposeReadFile: false,
+                memoryMappedFile,
+                disposeWriteFile: false,
                 TimeProvider.System,
                 options ?? new OptionsWrapper<TigaIpcOptions>(new TigaIpcOptions()),
                 logger)
@@ -147,7 +199,9 @@ namespace TigaIpc.Messaging
             ILogger<TigaMessageBus>? logger = null)
             : this(
                 memoryMappedFile,
-                disposeFile,
+                disposeReadFile: disposeFile,
+                memoryMappedFile,
+                disposeWriteFile: disposeFile,
                 TimeProvider.System,
                 options ?? new OptionsWrapper<TigaIpcOptions>(new TigaIpcOptions()),
                 logger)
@@ -171,18 +225,40 @@ namespace TigaIpc.Messaging
             TimeProvider timeProvider,
             IOptions<TigaIpcOptions> options,
             ILogger<TigaMessageBus>? logger = null)
+            : this(
+                memoryMappedFile,
+                disposeReadFile: disposeFile,
+                memoryMappedFile,
+                disposeWriteFile: disposeFile,
+                timeProvider,
+                options,
+                logger)
         {
-            _memoryMappedFile = memoryMappedFile ?? throw new ArgumentNullException(nameof(memoryMappedFile));
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class with separate read/write channels.
+        /// </summary>
+        public TigaMessageBus(
+            ITigaMemoryMappedFile readFile,
+            bool disposeReadFile,
+            ITigaMemoryMappedFile writeFile,
+            bool disposeWriteFile,
+            TimeProvider timeProvider,
+            IOptions<TigaIpcOptions> options,
+            ILogger<TigaMessageBus>? logger = null)
+        {
+            _readFile = readFile ?? throw new ArgumentNullException(nameof(readFile));
+            _writeFile = writeFile ?? throw new ArgumentNullException(nameof(writeFile));
             _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
             _options = options ?? throw new ArgumentNullException(nameof(options));
-            _disposeFile = disposeFile;
+            _disposeReadFile = disposeReadFile;
+            _disposeWriteFile = disposeWriteFile;
             _logger = logger;
+            var objectPoolProvider = new DefaultObjectPoolProvider();
+            _stringBuilderPool = objectPoolProvider.CreateStringBuilderPool();
 
-            memoryMappedFile.FileUpdated += WhenFileUpdated;
-
-            _lastEntryId = memoryMappedFile.Read(static stream => DeserializeLogBook(stream).LastId);
-
-            _receiverTask = Task.Run(ReceiveWorkAsync, _cancellationTokenSource.Token);
+            _readFile.FileUpdated += WhenFileUpdated;
 
             // Cache common configuration values
             var waitTimeout = options.Value.WaitTimeout;
@@ -190,6 +266,12 @@ namespace TigaIpc.Messaging
             var minMessageAge = options.Value.MinMessageAge;
             _enableCompression = options.Value.EnableCompression;
             _compressionThreshold = options.Value.CompressionThreshold;
+            _logBookSchemaVersion = Math.Max(1, options.Value.LogBookSchemaVersion);
+            _allowLegacyLogBook = options.Value.AllowLegacyLogBook;
+
+            _lastEntryId = _readFile.Read(stream => DeserializeLogBook(stream).LastId);
+
+            _receiverTask = Task.Run(ReceiveWorkAsync, _cancellationTokenSource.Token);
 
             Println(
                 $"TigaMessageBus initialized (InstanceId={_instanceId}, WaitTimeout={waitTimeout}, MaxPublishRetries={maxPublishRetries}, MinMessageAge={minMessageAge}, Compression={_enableCompression}/{_compressionThreshold})");
@@ -211,6 +293,12 @@ namespace TigaIpc.Messaging
             _receiverTaskCompletionSource = new TaskCompletionSource<bool>();
             _timeProvider = TimeProvider.System;
             _options = new OptionsWrapper<TigaIpcOptions>(new TigaIpcOptions());
+            _readFile = new NullMemoryMappedFile();
+            _writeFile = _readFile;
+            _disposeReadFile = false;
+            _disposeWriteFile = false;
+            var objectPoolProvider = new DefaultObjectPoolProvider();
+            _stringBuilderPool = objectPoolProvider.CreateStringBuilderPool();
         }
 
         /// <summary>
@@ -253,6 +341,32 @@ namespace TigaIpc.Messaging
         /// </summary>
         public long DeserializationFailureCount => Interlocked.Read(ref _deserializationFailureCount);
 
+        public SynchronizationMetrics? GetSynchronizationMetrics()
+        {
+            var readMetrics = (_readFile as ISynchronizationMetricsProvider)?.GetSynchronizationMetrics();
+            var writeMetrics = (_writeFile as ISynchronizationMetricsProvider)?.GetSynchronizationMetrics();
+
+            if (ReferenceEquals(_readFile, _writeFile))
+            {
+                return readMetrics ?? writeMetrics;
+            }
+
+            if (readMetrics == null)
+            {
+                return writeMetrics;
+            }
+
+            if (writeMetrics == null)
+            {
+                return readMetrics;
+            }
+
+            return new SynchronizationMetrics(
+                readMetrics.LockTimeouts + writeMetrics.LockTimeouts,
+                readMetrics.LockAbandoned + writeMetrics.LockAbandoned,
+                readMetrics.ReaderGraceResets + writeMetrics.ReaderGraceResets);
+        }
+
         public void Dispose()
         {
             Println("method invocation: Dispose");
@@ -272,10 +386,7 @@ namespace TigaIpc.Messaging
                 try
                 {
                     // cancel event
-                    if (_memoryMappedFile != null)
-                    {
-                        _memoryMappedFile.FileUpdated -= WhenFileUpdated;
-                    }
+                    _readFile.FileUpdated -= WhenFileUpdated;
 
                     // cancel all operations
                     _cancellationTokenSource.Cancel();
@@ -317,7 +428,9 @@ namespace TigaIpc.Messaging
                     }
 
                     // Handling memory-mapped files
-                    if (_disposeFile && _memoryMappedFile != null)
+                    var sameFile = ReferenceEquals(_readFile, _writeFile);
+
+                    if (_disposeReadFile)
                     {
                         if (_messageReaderSemaphore != null &&
                             !_messageReaderSemaphore.Wait(_options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5)))
@@ -328,16 +441,28 @@ namespace TigaIpc.Messaging
                         {
                             try
                             {
-                                _memoryMappedFile.Dispose();
+                                _readFile.Dispose();
                             }
                             catch (Exception ex)
                             {
-                                PrintFailed(ex, "Error disposing memory mapped file");
+                                PrintFailed(ex, "Error disposing read memory mapped file");
                             }
                             finally
                             {
                                 _messageReaderSemaphore?.Release();
                             }
+                        }
+                    }
+
+                    if (_disposeWriteFile && !sameFile)
+                    {
+                        try
+                        {
+                            _writeFile.Dispose();
+                        }
+                        catch (Exception ex)
+                        {
+                            PrintFailed(ex, "Error disposing write memory mapped file");
                         }
                     }
 
@@ -384,10 +509,7 @@ namespace TigaIpc.Messaging
                 try
                 {
                     // Unsubscribe event
-                    if (_memoryMappedFile != null)
-                    {
-                        _memoryMappedFile.FileUpdated -= WhenFileUpdated;
-                    }
+                    _readFile.FileUpdated -= WhenFileUpdated;
 
                     // Cancel all operations
 #if NET7_0_OR_GREATER
@@ -434,7 +556,9 @@ namespace TigaIpc.Messaging
                     }
 
                     // Handling memory-mapped files
-                    if (_disposeFile && _memoryMappedFile != null && _messageReaderSemaphore != null)
+                    var sameFile = ReferenceEquals(_readFile, _writeFile);
+
+                    if (_disposeReadFile && _messageReaderSemaphore != null)
                     {
                         var semaphoreAcquired = await _messageReaderSemaphore
                             .WaitAsync(_options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5))
@@ -448,24 +572,42 @@ namespace TigaIpc.Messaging
                         {
                             try
                             {
-                                // Check if IAsyncDisposable is implemented
-                                if (_memoryMappedFile is IAsyncDisposable asyncDisposable)
+                                if (_readFile is IAsyncDisposable asyncDisposable)
                                 {
                                     await asyncDisposable.DisposeAsync().ConfigureAwait(false);
                                 }
                                 else
                                 {
-                                    _memoryMappedFile.Dispose();
+                                    _readFile.Dispose();
                                 }
                             }
                             catch (Exception ex)
                             {
-                                PrintFailed(ex, "Error disposing memory mapped file asynchronously");
+                                PrintFailed(ex, "Error disposing read memory mapped file asynchronously");
                             }
                             finally
                             {
                                 _messageReaderSemaphore.Release();
                             }
+                        }
+                    }
+
+                    if (_disposeWriteFile && !sameFile)
+                    {
+                        try
+                        {
+                            if (_writeFile is IAsyncDisposable asyncDisposable)
+                            {
+                                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                _writeFile.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            PrintFailed(ex, "Error disposing write memory mapped file asynchronously");
                         }
                     }
 
@@ -547,7 +689,7 @@ namespace TigaIpc.Messaging
                 var slotTimer = Stopwatch.StartNew();
                 var batchTime = _timeProvider.GetTimestamp();
                 var publishCount = 0;
-                var maxFileSize = _memoryMappedFile.MaxFileSize;
+                var maxFileSize = _writeFile.MaxFileSize;
                 var instanceId = _instanceId;
 
                 // Performance optimization: pre-allocating sufficient capacity
@@ -609,8 +751,7 @@ namespace TigaIpc.Messaging
                 {
                     // 创建不可变列表并序列化
                     var immutableEntries = newEntries.ToImmutableList();
-                    MessagePackSerializer.Serialize(writeStream, new LogBook(lastId, immutableEntries),
-                        MessagePackOptions.Instance);
+                    WriteLogBook(writeStream, new LogBook(lastId, immutableEntries));
                 }
 
                 return publishCount;
@@ -693,7 +834,7 @@ namespace TigaIpc.Messaging
                         try
                         {
                             // Read and write memory-mapped files
-                            _memoryMappedFile.ReadWrite(
+                            _writeFile.ReadWrite(
                                 (readStream, writeStream) =>
                                 {
                                     var publishCount = PublishMessages(
@@ -816,7 +957,7 @@ namespace TigaIpc.Messaging
                 LogBook logBook;
                 try
                 {
-                    logBook = _memoryMappedFile.Read(static stream => DeserializeLogBook(stream));
+                    logBook = _readFile.Read(stream => DeserializeLogBook(stream));
                 }
                 catch (Exception ex)
                 {
@@ -965,6 +1106,11 @@ namespace TigaIpc.Messaging
                         {
                             case EventProtocol.Invoke:
                                 // Handle Invoke messages
+                                if (!HasInvokeHandlers)
+                                {
+                                    break;
+                                }
+
                                 Println($"Invoke Message: {postData}");
                                 await HandleInvokeMessageAsync(postData).ConfigureAwait(false);
                                 break;
@@ -1230,34 +1376,89 @@ namespace TigaIpc.Messaging
             _logger?.LogWarning(message, args);
         }
 
-        private static ITigaMemoryMappedFile CreateMemoryMappedFile(
-            string name,
-            MappingType type,
-            IOptions<TigaIpcOptions> suppliedOptions,
-            out IOptions<TigaIpcOptions> resolvedOptions,
-            out bool waitFree)
-        {
-            resolvedOptions = suppliedOptions ?? new OptionsWrapper<TigaIpcOptions>(new TigaIpcOptions());
-            var optionsValue = resolvedOptions.Value ?? new TigaIpcOptions();
-
-            waitFree = optionsValue.UseWaitFreeSynchronization;
-
-            if (waitFree)
-            {
-                return new WaitFreeMemoryMappedFile(name, type, optionsValue);
-            }
-
-            return new TigaMemoryMappedFile(name, type, optionsValue.MaxFileSize);
-        }
-
-        private static LogBook DeserializeLogBook(Stream stream)
+        private LogBook DeserializeLogBook(Stream stream)
         {
             if (stream.Length == 0)
             {
                 return new LogBook(0, []);
             }
 
+            if (TryDeserializeEnvelope(stream, out var envelope))
+            {
+                if (envelope.SchemaVersion != _logBookSchemaVersion)
+                {
+                    throw new InvalidOperationException(
+                        $"Unsupported log book schema version {envelope.SchemaVersion} (expected {_logBookSchemaVersion}).");
+                }
+
+                return envelope.LogBook;
+            }
+
+            if (!_allowLegacyLogBook)
+            {
+                throw new InvalidOperationException("Legacy log book payloads are not allowed.");
+            }
+
+            stream.Seek(0, SeekOrigin.Begin);
             return MessagePackSerializer.Deserialize<LogBook>(stream, MessagePackOptions.Instance);
+        }
+
+        private void WriteLogBook(Stream stream, LogBook logBook)
+        {
+            if (_logBookSchemaVersion <= 1)
+            {
+                MessagePackSerializer.Serialize(stream, logBook, MessagePackOptions.Instance);
+                return;
+            }
+
+            var envelope = new LogBookEnvelope(_logBookSchemaVersion, logBook);
+            MessagePackSerializer.Serialize(stream, envelope, MessagePackOptions.Instance);
+        }
+
+        private static bool TryDeserializeEnvelope(Stream stream, out LogBookEnvelope envelope)
+        {
+            try
+            {
+                envelope = MessagePackSerializer.Deserialize<LogBookEnvelope>(stream, MessagePackOptions.Instance);
+                return true;
+            }
+            catch (MessagePackSerializationException)
+            {
+                envelope = default;
+                return false;
+            }
+        }
+
+        private sealed class NullMemoryMappedFile : ITigaMemoryMappedFile
+        {
+            public event EventHandler? FileUpdated;
+
+            public long MaxFileSize => 0;
+
+            public string? Name => "null";
+
+            public int GetFileSize(CancellationToken cancellationToken = default)
+            {
+                return 0;
+            }
+
+            public T Read<T>(Func<MemoryStream, T> readData, CancellationToken cancellationToken = default)
+            {
+                return readData(new MemoryStream());
+            }
+
+            public void Write(MemoryStream data, CancellationToken cancellationToken = default)
+            {
+            }
+
+            public void ReadWrite(Action<MemoryStream, MemoryStream> updateFunc, CancellationToken cancellationToken = default)
+            {
+                updateFunc(new MemoryStream(), new MemoryStream());
+            }
+
+            public void Dispose()
+            {
+            }
         }
 
         [LoggerMessage(0, LogLevel.Debug, "Publishing {message_length} byte message, media type {media_type}")]

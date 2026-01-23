@@ -129,7 +129,7 @@ public partial class TigaMessageBus
                         {
                             try
                             {
-                                _memoryMappedFile.ReadWrite((readStream, writeStream) =>
+                                _writeFile.ReadWrite((readStream, writeStream) =>
                                 {
                                     var publishCount = PublishMessages(readStream, writeStream, publishQueue,
                                         TimeSpan.FromMilliseconds(100));

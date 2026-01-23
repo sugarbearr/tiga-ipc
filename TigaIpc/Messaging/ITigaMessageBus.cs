@@ -1,3 +1,5 @@
+using TigaIpc.IO;
+
 namespace TigaIpc.Messaging;
 
 public partial interface ITigaMessageBus : IDisposable, IAsyncDisposable
@@ -21,6 +23,11 @@ public partial interface ITigaMessageBus : IDisposable, IAsyncDisposable
     /// the name of the message bus
     /// </summary>
     string? Name { get; }
+
+    /// <summary>
+    /// get synchronization metrics from the underlying memory mapped file (if available)
+    /// </summary>
+    SynchronizationMetrics? GetSynchronizationMetrics();
 }
 
 public partial interface ITigaMessageBus

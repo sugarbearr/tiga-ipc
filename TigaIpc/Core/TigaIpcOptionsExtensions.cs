@@ -76,6 +76,7 @@ public static class TigaIpcOptionsExtensions
         int invokeTimeoutSeconds = 60)
     {
         options.WaitTimeout = TimeSpan.FromSeconds(waitTimeoutSeconds);
+        options.ReaderGraceTimeout = TimeSpan.FromSeconds(waitTimeoutSeconds);
         options.InvokeTimeout = TimeSpan.FromSeconds(invokeTimeoutSeconds);
         return options;
     }
@@ -96,6 +97,7 @@ public static class TigaIpcOptionsExtensions
     {
         // 增加超时时间
         options.WaitTimeout = TimeSpan.FromSeconds(waitTimeoutSeconds);
+        options.ReaderGraceTimeout = TimeSpan.FromSeconds(waitTimeoutSeconds);
         options.InvokeTimeout = TimeSpan.FromSeconds(invokeTimeoutSeconds);
 
         // 增加重试次数
@@ -103,9 +105,6 @@ public static class TigaIpcOptionsExtensions
 
         // 减小最小消息年龄，允许更快地清理过期消息
         options.MinMessageAge = TimeSpan.FromMilliseconds(500);
-
-        // 启用无等待同步模型
-        options.UseWaitFreeSynchronization = true;
 
         return options;
     }

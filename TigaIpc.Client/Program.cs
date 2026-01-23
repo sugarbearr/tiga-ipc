@@ -1,7 +1,9 @@
 ﻿using MessagePack;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
+using System.Diagnostics;
 using System.Runtime.Versioning;
+using TigaIpc;
 using TigaIpc.Core;
 using TigaIpc.Messaging;
 
@@ -24,18 +26,30 @@ class Program
 
     static async Task Main(string[] args)
     {
-        var ipcOptions = new TigaIpcOptions { Name = ChannelName }.WithRobustConfiguration();
+        var clientId = Environment.GetEnvironmentVariable("TIGA_IPC_CLIENT_ID") ??
+                       $"{Environment.ProcessId}-{Guid.NewGuid():N}";
+        var mappingDir = Path.Combine(Path.GetTempPath(), "tiga-ipc");
+        var ipcOptions = new TigaIpcOptions
+        {
+            Name = ChannelName,
+            FileMappingDirectory = mappingDir,
+        }.WithRobustConfiguration();
+        var requestName = PerClientChannelNames.GetRequestChannelName(ChannelName, clientId);
+        var responseName = PerClientChannelNames.GetResponseChannelName(ChannelName, clientId);
         await using var messageBus = new TigaMessageBus(
-            ChannelName,
-            MappingType.Memory,
+            responseName,
+            requestName,
+            MappingType.File,
             Options.Create(ipcOptions));
 
-        Console.WriteLine("TigaIpc client ready (wait-free mode).");
+        Console.WriteLine($"TigaIpc client ready (wait-free mode, clientId={clientId}).");
         PrintHelp();
 
         while (true)
         {
-            var line = Console.ReadLine();
+            var processId = Environment.ProcessId;
+            Thread.Sleep(1000);
+            var line = $"invoke Halo{processId}!";
             if (line is null)
             {
                 continue;
@@ -53,7 +67,7 @@ class Program
                     {
                         var payload = parts.Length > 1 ? parts[1] : "hello";
                         var response = await messageBus.InvokeAsync("method", payload);
-                        Console.WriteLine($"Response: {response}");
+                        Console.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss:fff}] Response: {response}");
                         break;
                     }
                 case "cookie":

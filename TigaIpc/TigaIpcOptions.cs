@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.IO.MemoryMappedFiles;
+using TigaIpc.IO;
 
 namespace TigaIpc
 {
@@ -8,13 +10,14 @@ namespace TigaIpc
     public class TigaIpcOptions
     {
         public const int DefaultMaxFileSize = 1024 * 1024;
-        public const int DefaultMaxReaderCount = 6;
         public const int DefaultCompressionThreshold = 256;
         public const bool DefaultEnableCompression = true;
 
         public static readonly TimeSpan DefaultMinMessageAge = TimeSpan.FromMilliseconds(1_000);
         public static readonly TimeSpan DefaultWaitTimeout = TimeSpan.FromSeconds(5);
         public static readonly TimeSpan DefaultInvokeTimeout = TimeSpan.FromSeconds(30);
+        public static readonly TimeSpan DefaultWriterSleepDuration = TimeSpan.FromMilliseconds(1);
+        public static readonly TimeSpan DefaultClientDiscoveryInterval = TimeSpan.FromSeconds(1);
 
         /// <summary>
         /// Gets or sets the name of this set of locks and memory mapped file, default value is process name.
@@ -27,11 +30,6 @@ namespace TigaIpc
         public long MaxFileSize { get; set; } = DefaultMaxFileSize;
 
         /// <summary>
-        /// Gets or sets maxium simultaneous readers, default is 6
-        /// </summary>
-        public int MaxReaderCount { get; set; } = DefaultMaxReaderCount;
-
-        /// <summary>
         /// Gets or sets the minimum amount of time messages are required to live before removal from the file, default is 1 second
         /// </summary>
         public TimeSpan MinMessageAge { get; set; } = DefaultMinMessageAge;
@@ -40,6 +38,51 @@ namespace TigaIpc
         /// Gets or sets how long to wait before giving up aquiring read and write locks, default is 5 seconds
         /// </summary>
         public TimeSpan WaitTimeout { get; set; } = DefaultWaitTimeout;
+
+        /// <summary>
+        /// Gets or sets how long to wait before resetting reader counts in wait-free mode, default is 5 seconds.
+        /// </summary>
+        public TimeSpan ReaderGraceTimeout { get; set; } = DefaultWaitTimeout;
+
+        /// <summary>
+        /// Gets or sets how long the writer sleeps between reader checks, default is 1ms.
+        /// </summary>
+        public TimeSpan WriterSleepDuration { get; set; } = DefaultWriterSleepDuration;
+
+        /// <summary>
+        /// Gets or sets how often the server scans for new client channels when using per-client topology.
+        /// </summary>
+        public TimeSpan ClientDiscoveryInterval { get; set; } = DefaultClientDiscoveryInterval;
+
+        /// <summary>
+        /// Gets or sets whether to verify checksum on read operations by default.
+        /// </summary>
+        public bool VerifyChecksumOnRead { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets custom checksum provider (default is WyHash).
+        /// </summary>
+        public ChecksumProvider? ChecksumProvider { get; set; }
+
+        /// <summary>
+        /// Gets or sets base directory for file-backed mappings (optional).
+        /// </summary>
+        public string? FileMappingDirectory { get; set; }
+
+        /// <summary>
+        /// Gets or sets log book schema version for serialization compatibility (default 1).
+        /// </summary>
+        public int LogBookSchemaVersion { get; set; } = 1;
+
+        /// <summary>
+        /// Gets or sets whether legacy log book payloads are allowed (default true).
+        /// </summary>
+        public bool AllowLegacyLogBook { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets whether to use a single-writer file lock (flock) when MappingType.File is used.
+        /// </summary>
+        public bool UseSingleWriterLock { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether 是否启用消息压缩功能，默认为true
@@ -62,8 +105,19 @@ namespace TigaIpc
         public int MaxPublishRetries { get; set; } = 3;
 
         /// <summary>
-        /// Gets or sets a value indicating whether 是否使用借鉴 mmap-sync 的无等待同步模型，默认为 false
+        /// Optional factory for file-backed mapping to apply custom ACLs.
         /// </summary>
-        public bool UseWaitFreeSynchronization { get; set; } = true;
+        public Func<string, long, FileStream>? FileStreamFactory { get; set; }
+
+        /// <summary>
+        /// Optional factory for named memory mapped file to apply custom ACLs.
+        /// </summary>
+        public Func<string, long, MemoryMappedFile>? NamedMemoryMappedFileFactory { get; set; }
+
+        /// <summary>
+        /// Optional factory for named event wait handle to apply custom ACLs.
+        /// </summary>
+        public Func<string, EventWaitHandle>? EventWaitHandleFactory { get; set; }
+
     }
 }
