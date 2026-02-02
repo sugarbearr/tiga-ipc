@@ -18,7 +18,8 @@ class Program
         Console.WriteLine("=== TigaIpc Server Example ===");
         Console.WriteLine($"Channel Name: {ChannelName}");
 
-        var mappingDir = Path.Combine(Path.GetTempPath(), "tiga-ipc");
+        var mappingDir = Environment.GetEnvironmentVariable("TIGA_IPC_DIR")
+                         ?? Path.Combine(Path.GetTempPath(), "tiga-ipc");
         Console.WriteLine($"Mapping Directory: {mappingDir}");
 
         // 1. Configure IPC Options
@@ -26,6 +27,8 @@ class Program
         {
             Name = ChannelName,
             FileMappingDirectory = mappingDir,
+            LogBookSchemaVersion = 1,
+            AllowLegacyLogBook = true,
         }.WithRobustConfiguration();
 
         // 2. Initialize Server

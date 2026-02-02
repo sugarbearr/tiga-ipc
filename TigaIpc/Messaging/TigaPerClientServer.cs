@@ -238,6 +238,8 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
         var pollInterval = optionsValue.ClientDiscoveryInterval <= TimeSpan.Zero
             ? TimeSpan.FromSeconds(1)
             : optionsValue.ClientDiscoveryInterval;
+        Console.WriteLine(
+            $"[PerClientDiscovery] baseDirectory={baseDirectory} prefix={prefix} suffix={suffix} interval={pollInterval.TotalMilliseconds}ms");
 
         while (!_cancellationTokenSource.IsCancellationRequested)
         {
@@ -256,16 +258,38 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
                         continue;
                     }
 
-                    AddClient(clientId);
+                    try
+                    {
+                        var added = AddClient(clientId);
+                        Console.WriteLine($"[PerClientDiscovery] found={fileName} clientId={clientId} added={added}");
+                        if (added && _clients.TryGetValue(clientId, out var bus))
+                        {
+                            _ = bus.ReadAsync();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[PerClientDiscovery] add failed clientId={clientId} error={ex}");
+                    }
+                }
+
+                // Poll existing clients to avoid missing signals from external writers.
+                if (!_clients.IsEmpty)
+                {
+                    foreach (var bus in _clients.Values)
+                    {
+                        _ = bus.ReadAsync();
+                    }
                 }
             }
             catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested)
             {
                 break;
             }
-            catch
+            catch (Exception ex)
             {
                 // ignore discovery failures to keep the loop alive
+                Console.WriteLine($"[PerClientDiscovery] discovery loop error: {ex}");
             }
 
             try

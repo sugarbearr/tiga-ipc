@@ -28,7 +28,8 @@ class Program
     {
         var clientId = Environment.GetEnvironmentVariable("TIGA_IPC_CLIENT_ID") ??
                        $"{Environment.ProcessId}-{Guid.NewGuid():N}";
-        var mappingDir = Path.Combine(Path.GetTempPath(), "tiga-ipc");
+        var mappingDir = Environment.GetEnvironmentVariable("TIGA_IPC_DIR")
+                         ?? Path.Combine(Path.GetTempPath(), "tiga-ipc");
         var ipcOptions = new TigaIpcOptions
         {
             Name = ChannelName,

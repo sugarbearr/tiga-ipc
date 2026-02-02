@@ -962,6 +962,7 @@ namespace TigaIpc.Messaging
                 catch (Exception ex)
                 {
                     PrintFailed(ex, "Error reading from memory mapped file");
+                    Console.WriteLine($"[ReceiveMessagesAsync] Read failed: {ex}");
                     return;
                 }
 
@@ -1041,6 +1042,7 @@ namespace TigaIpc.Messaging
             {
                 // Only log exceptions in non-disposal states
                 PrintFailed(ex, "Unexpected error in ReceiveMessagesAsync");
+                Console.WriteLine($"[ReceiveMessagesAsync] Unexpected error: {ex}");
             }
             finally
             {
