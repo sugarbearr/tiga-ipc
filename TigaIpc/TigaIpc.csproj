@@ -8,7 +8,7 @@
 		<LangVersion>13.0</LangVersion>
 		<WarningLevel>8</WarningLevel>
 		<Authors>com.innodealing.native</Authors>
-		<Version>0.0.4-rc</Version>
+		<Version>0.0.4-rc1</Version>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
