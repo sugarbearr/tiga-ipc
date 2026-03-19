@@ -1,18 +1,55 @@
 {
-  "name": "mmap-napi",
+  "name": "@tiga-ipc/mmap",
   "version": "0.1.0",
-  "description": "",
-  "main": "index.node",
+  "description": "Windows memory-mapped IPC bindings for Tiga channels.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "README.md",
+    "index.js",
+    "index.d.ts",
+    "index.node"
+  ],
+  "os": [
+    "win32"
+  ],
   "scripts": {
     "test": "cargo test",
     "cargo-build": "npx @napi-rs/cli build",
     "cross-build": "npx @napi-rs/cli build",
     "debug": "npm run cargo-build --",
     "build": "npm run cargo-build -- --release",
-    "cross": "npm run cross-build -- --release"
+    "cross": "npm run cross-build -- --release",
+    "prepack": "node -e \"require('fs').accessSync('index.node')\""
   },
+  "keywords": [
+    "ipc",
+    "mmap",
+    "memory-mapped-file",
+    "napi-rs",
+    "tiga"
+  ],
   "author": "",
   "license": "ISC",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sugarbearr/TigaIpc.git",
+    "directory": "nodejs/mmap-napi"
+  },
+  "bugs": {
+    "url": "https://github.com/sugarbearr/TigaIpc/issues"
+  },
+  "homepage": "https://github.com/sugarbearr/TigaIpc",
   "devDependencies": {
     "@napi-rs/cli": "^2.18.0"
   }

@@ -1,10 +1,8 @@
-const mmapNeon = require('./index.node');
+const binding = require('./index.node');
 
 module.exports = {
-  initialized: mmapNeon.initialized,
-  write: mmapNeon.write,
-  read: mmapNeon.read,
-  tigaWrite: mmapNeon.tigaWrite,
-  tigaRead: mmapNeon.tigaRead,
-  tigaInvoke: mmapNeon.tigaInvoke,
+  initialized: binding.initialized,
+  tigaWrite: binding.tigaWrite,
+  tigaRead: binding.tigaRead,
+  tigaInvoke: binding.tigaInvoke,
 };
