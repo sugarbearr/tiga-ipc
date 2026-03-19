@@ -19,7 +19,7 @@ TigaIPC 是一个基于内存映射文件（Memory Mapped File）的高性能、
   - 数据完整性校验：默认使用 WyHash 算法，支持自定义校验策略。
   - 进程崩溃恢复：自动检测并重置失效的读者/写者状态。
 - **跨平台支持**：
-  - 支持 Windows 和 Linux（优先使用 `/dev/shm`）。
+  - 文件映射模式支持 Windows 和 Linux（优先使用 `/dev/shm`）。
   - 支持 Docker 容器环境下的共享内存通信。
 
 ## 🚀 快速开始
@@ -94,10 +94,10 @@ TigaIPC 使用独立的状态文件 (`state`) 和两个数据文件 (`data_0`, `
 var options = new TigaIpcOptions
 {
     Name = "MyChannel",
-    FileMappingDirectory = "/tmp/tiga-ipc", // 指定映射文件目录
-    MessageBusType = MessageBusType.WaitFree, // 同步模式
-    Capacity = 1024 * 1024, // 初始容量 1MB
-    ReaderGraceTimeout = TimeSpan.FromSeconds(1) // 读者超时时间
+    FileMappingDirectory = "/tmp/tiga-ipc", // 文件映射目录
+    MaxFileSize = 1024 * 1024, // 初始容量 1MB
+    ReaderGraceTimeout = TimeSpan.FromSeconds(1), // 读者超时时间
+    UseSingleWriterLock = true, // 文件映射模式下启用单写者锁
 };
 ```
 

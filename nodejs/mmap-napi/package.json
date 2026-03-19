@@ -1,0 +1,19 @@
+{
+  "name": "mmap-napi",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.node",
+  "scripts": {
+    "test": "cargo test",
+    "cargo-build": "npx @napi-rs/cli build",
+    "cross-build": "npx @napi-rs/cli build",
+    "debug": "npm run cargo-build --",
+    "build": "npm run cargo-build -- --release",
+    "cross": "npm run cross-build -- --release"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0"
+  }
+}

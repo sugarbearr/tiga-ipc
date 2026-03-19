@@ -45,32 +45,48 @@ public class LogBookSchemaTests
     public void LogBookSchemaVersion_StrictRejectsLegacy()
     {
         var name = "schema_strict_" + Guid.NewGuid().ToString("N");
+        var mappingDir = Path.Combine(Path.GetTempPath(), "tiga-ipc-schema-" + Guid.NewGuid().ToString("N"));
 
-        var legacyOptions = new TigaIpcOptions
-        {
-            Name = name,
-            LogBookSchemaVersion = 1,
-        };
+        Directory.CreateDirectory(mappingDir);
 
-        using (var legacyFile = new WaitFreeMemoryMappedFile(name, MappingType.Memory, legacyOptions))
+        try
         {
-            var logBook = new LogBook(1, []);
-            using var stream = new MemoryStream();
-            MessagePackSerializer.Serialize(stream, logBook);
-            stream.Seek(0, SeekOrigin.Begin);
-            legacyFile.Write(stream);
+            var legacyOptions = new TigaIpcOptions
+            {
+                Name = name,
+                LogBookSchemaVersion = 1,
+                FileMappingDirectory = mappingDir,
+            };
+
+            using (var legacyFile = new WaitFreeMemoryMappedFile(name, MappingType.File, legacyOptions))
+            {
+                var logBook = new LogBook(1, []);
+                using var stream = new MemoryStream();
+                MessagePackSerializer.Serialize(stream, logBook);
+                stream.Seek(0, SeekOrigin.Begin);
+                legacyFile.Write(stream);
+            }
+
+            var strictOptions = new TigaIpcOptions
+            {
+                Name = name,
+                LogBookSchemaVersion = 2,
+                AllowLegacyLogBook = false,
+                FileMappingDirectory = mappingDir,
+            };
+
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                using var bus =
+                    new TigaMessageBus(name, MappingType.File, new OptionsWrapper<TigaIpcOptions>(strictOptions));
+            });
         }
-
-        var strictOptions = new TigaIpcOptions
+        finally
         {
-            Name = name,
-            LogBookSchemaVersion = 2,
-            AllowLegacyLogBook = false,
-        };
-
-        Assert.Throws<InvalidOperationException>(() =>
-        {
-            using var bus = new TigaMessageBus(name, MappingType.Memory, new OptionsWrapper<TigaIpcOptions>(strictOptions));
-        });
+            if (Directory.Exists(mappingDir))
+            {
+                Directory.Delete(mappingDir, true);
+            }
+        }
     }
 }

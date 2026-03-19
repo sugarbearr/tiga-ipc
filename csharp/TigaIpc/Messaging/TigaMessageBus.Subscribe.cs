@@ -23,10 +23,7 @@ public partial class TigaMessageBus
         }
 #endif
 
-        var id = Guid.NewGuid();
-        var receiverChannel = Channel.CreateUnbounded<LogEntry>();
-
-        _receiverChannels[id] = receiverChannel;
+        var (id, receiverChannel) = CreateRegisteredReceiverChannel();
 
         try
         {
@@ -38,7 +35,7 @@ public partial class TigaMessageBus
         }
         finally
         {
-            _receiverChannels.TryRemove(id, out _);
+            CleanupReceiverChannel(id, receiverChannel);
         }
     }
 }

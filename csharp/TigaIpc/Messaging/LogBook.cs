@@ -37,8 +37,8 @@ public readonly record struct LogBook(
             return 0;
         }
 
-        var cutoffPoint = timeProvider.GetTimestamp() -
-                          minMessageAge.Ticks / TimeSpan.TicksPerSecond * Stopwatch.Frequency;
+        var minMessageAgeTicks = (minMessageAge.Ticks * Stopwatch.Frequency) / TimeSpan.TicksPerSecond;
+        var cutoffPoint = timeProvider.GetTimestamp() - minMessageAgeTicks;
 
         var i = 0;
         for (; i < Entries.Count; i++)

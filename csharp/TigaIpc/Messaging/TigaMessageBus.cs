@@ -258,8 +258,6 @@ namespace TigaIpc.Messaging
             var objectPoolProvider = new DefaultObjectPoolProvider();
             _stringBuilderPool = objectPoolProvider.CreateStringBuilderPool();
 
-            _readFile.FileUpdated += WhenFileUpdated;
-
             // Cache common configuration values
             var waitTimeout = options.Value.WaitTimeout;
             var maxPublishRetries = options.Value.MaxPublishRetries;
@@ -268,13 +266,52 @@ namespace TigaIpc.Messaging
             _compressionThreshold = options.Value.CompressionThreshold;
             _logBookSchemaVersion = Math.Max(1, options.Value.LogBookSchemaVersion);
             _allowLegacyLogBook = options.Value.AllowLegacyLogBook;
+            var (receiverChannelId, receiverChannel) = CreateRegisteredReceiverChannel();
+            _receiverTaskCompletionSource.TrySetResult(true);
 
-            _lastEntryId = _readFile.Read(stream => DeserializeLogBook(stream).LastId);
+            try
+            {
+                _readFile.FileUpdated += WhenFileUpdated;
+                _lastEntryId = _readFile.Read(stream => DeserializeLogBook(stream).LastId);
+                _receiverTask = Task.Run(
+                    () => ReceiveWorkAsync(receiverChannelId, receiverChannel),
+                    _cancellationTokenSource.Token);
+                _ = ReceiveMessagesAsync();
 
-            _receiverTask = Task.Run(ReceiveWorkAsync, _cancellationTokenSource.Token);
+                Println(
+                    $"TigaMessageBus initialized (InstanceId={_instanceId}, WaitTimeout={waitTimeout}, MaxPublishRetries={maxPublishRetries}, MinMessageAge={minMessageAge}, Compression={_enableCompression}/{_compressionThreshold})");
+            }
+            catch
+            {
+                CleanupReceiverChannel(receiverChannelId, receiverChannel);
+                _readFile.FileUpdated -= WhenFileUpdated;
 
-            Println(
-                $"TigaMessageBus initialized (InstanceId={_instanceId}, WaitTimeout={waitTimeout}, MaxPublishRetries={maxPublishRetries}, MinMessageAge={minMessageAge}, Compression={_enableCompression}/{_compressionThreshold})");
+                if (_disposeReadFile)
+                {
+                    try
+                    {
+                        _readFile.Dispose();
+                    }
+                    catch
+                    {
+                        // Ignore cleanup failures from a failed constructor path.
+                    }
+                }
+
+                if (_disposeWriteFile && !ReferenceEquals(_readFile, _writeFile))
+                {
+                    try
+                    {
+                        _writeFile.Dispose();
+                    }
+                    catch
+                    {
+                        // Ignore cleanup failures from a failed constructor path.
+                    }
+                }
+
+                throw;
+            }
         }
 
         /// <summary>
@@ -758,8 +795,8 @@ namespace TigaIpc.Messaging
             }
             catch (Exception ex)
             {
-                PrintFailed("Error publishing messages");
-                return 0;
+                PrintFailed(ex, "Error publishing messages");
+                throw;
             }
         }
 
@@ -968,11 +1005,15 @@ namespace TigaIpc.Messaging
 
                 // Get the ID of the last read and update it
                 long readFrom = _lastEntryId;
-                _lastEntryId = logBook.LastId;
 
                 // If there are no new entries, it returns directly
                 if (logBook.LastId <= readFrom || logBook.Entries.Count == 0)
                 {
+                    if (logBook.LastId > readFrom)
+                    {
+                        _lastEntryId = logBook.LastId;
+                    }
+
                     return;
                 }
 
@@ -992,6 +1033,7 @@ namespace TigaIpc.Messaging
                 // If there are no entries that need to be processed, it returns directly to the
                 if (entriesToProcess.Count == 0)
                 {
+                    _lastEntryId = logBook.LastId;
                     return;
                 }
 
@@ -1033,6 +1075,8 @@ namespace TigaIpc.Messaging
                         }
                     }
                 }
+
+                _lastEntryId = logBook.LastId;
             }
             catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested)
             {
@@ -1058,21 +1102,10 @@ namespace TigaIpc.Messaging
         /// Worker task that processes messages from the receiver channels and invokes the MessageReceived event.
         /// This method handles message routing based on protocol type and manages error handling.
         /// </summary>
-        private async Task ReceiveWorkAsync()
+        private async Task ReceiveWorkAsync(Guid id, Channel<LogEntry> receiverChannel)
         {
-            var id = Guid.NewGuid();
-            var receiverChannel = Channel.CreateUnbounded<LogEntry>(new UnboundedChannelOptions
-            {
-                SingleReader = true,
-                SingleWriter = false,
-                AllowSynchronousContinuations = false,
-            });
-
-            _receiverChannels[id] = receiverChannel;
-
             try
             {
-                _receiverTaskCompletionSource.TrySetResult(true);
                 await foreach (var entry in StreamEntriesAsync(receiverChannel.Reader, _cancellationTokenSource.Token)
                                    .ConfigureAwait(false))
                 {
@@ -1165,8 +1198,28 @@ namespace TigaIpc.Messaging
             }
             finally
             {
-                _receiverChannels.TryRemove(id, out _);
+                CleanupReceiverChannel(id, receiverChannel);
             }
+        }
+
+        private (Guid Id, Channel<LogEntry> Channel) CreateRegisteredReceiverChannel()
+        {
+            var id = Guid.NewGuid();
+            var receiverChannel = Channel.CreateUnbounded<LogEntry>(new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false,
+            });
+
+            _receiverChannels[id] = receiverChannel;
+            return (id, receiverChannel);
+        }
+
+        private void CleanupReceiverChannel(Guid id, Channel<LogEntry> receiverChannel)
+        {
+            receiverChannel.Writer.TryComplete();
+            _receiverChannels.TryRemove(id, out _);
         }
 
         private async Task HandleInvokeMessageAsync(BinaryData postData)

@@ -200,6 +200,7 @@ public partial class TigaMessageBus
         catch (Exception e)
         {
             PrintFailed(e, "Error in PublishAsync");
+            throw;
         }
         finally
         {

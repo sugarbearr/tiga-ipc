@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     private const string DataSuffix0 = "_data_0";
     private const string DataSuffix1 = "_data_1";
     private const string EventPrefix = "TinyMemoryMappedFile_WaitHandle_";
+    private const string NotificationSuffix = "_notify";
+    private const string NotificationEventSuffix = "_slot_";
+    private const int NotificationSlotCount = 128;
 
     private const int DataSizeBits = 39;
     private const int DataChecksumBits = 24;
@@ -31,14 +35,16 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
     private readonly MemoryMappedFile _stateMap;
     private readonly MemoryMappedViewAccessor _stateAccessor;
+    private readonly MemoryMappedFile _notificationMap;
+    private readonly MemoryMappedViewAccessor _notificationAccessor;
     private readonly MemoryMappedFile[] _dataMaps = new MemoryMappedFile[2];
     private readonly MemoryMappedViewAccessor[] _dataAccessors = new MemoryMappedViewAccessor[2];
     private readonly FileStream? _stateFileStream;
+    private readonly FileStream? _notificationFileStream;
     private readonly FileStream?[] _dataFileStreams = new FileStream?[2];
-    private readonly EventWaitHandle _fileWaitHandle;
-    private readonly EventWaitHandle _disposeWaitHandle;
-    private readonly Task _fileWatcherTask;
-    private readonly TaskCompletionSource<bool> _watcherReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly EventWaitHandle?[] _slotSignalHandles = new EventWaitHandle?[NotificationSlotCount];
+    private readonly object _fileUpdatedLock = new();
+    private readonly object _slotSignalHandlesLock = new();
     private readonly ILogger<WaitFreeMemoryMappedFile>? _logger;
     private readonly TimeSpan _waitTimeout;
     private readonly TimeSpan _readerGraceTimeout;
@@ -48,14 +54,26 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     private readonly bool _verifyChecksumOnRead;
     private readonly long _regionSize;
     private readonly int _stateSize;
+    private readonly int _notificationSize;
     private readonly MappingType _mappingType;
     private readonly bool _useSingleWriterLock;
+    private readonly string _notificationEventScope;
+    private readonly int _currentProcessId;
+    private readonly long _currentProcessStartTimeUtcTicks;
+    private readonly long _notificationSlotToken;
+    private readonly TigaIpcOptions _options;
 
+    private EventWaitHandle? _fileWaitHandle;
+    private EventWaitHandle? _disposeWaitHandle;
+    private Task? _fileWatcherTask;
     private bool _disposed;
+    private bool _notificationListenerInitialized;
     private long _lockTimeouts;
     private long _lockAbandoned;
     private long _readerResets;
     private long _lastReadVersion;
+    private int _notificationSlotIndex = -1;
+    private EventHandler? _fileUpdated;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WaitFreeMemoryMappedFile"/> class.
@@ -76,6 +94,7 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
 
         options ??= new TigaIpcOptions();
+        _options = options;
 
         Name = name;
         _logger = logger;
@@ -99,8 +118,12 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         MaxFileSize = options.MaxFileSize;
         _regionSize = checked(MaxFileSize);
         _stateSize = Unsafe.SizeOf<StateHeader>();
+        _notificationSize = Unsafe.SizeOf<NotificationSlot>() * NotificationSlotCount;
         _mappingType = type;
         _useSingleWriterLock = options.UseSingleWriterLock;
+        _currentProcessId = GetCurrentProcessId();
+        _currentProcessStartTimeUtcTicks = GetCurrentProcessStartTimeUtcTicks();
+        _notificationSlotToken = CreateNotificationSlotToken(_currentProcessId, _currentProcessStartTimeUtcTicks);
 
         if (_useSingleWriterLock && _mappingType != MappingType.File)
         {
@@ -108,14 +131,19 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
 
         var stateInitRequired = false;
+        string notificationIdentity;
         if (_mappingType == MappingType.File)
         {
             var prefix = GetFilePrefix(name, options);
             var statePath = prefix + StateSuffix;
+            var notificationPath = prefix + NotificationSuffix;
             var dataPath0 = prefix + DataSuffix0;
             var dataPath1 = prefix + DataSuffix1;
+            notificationIdentity = NormalizeNotificationIdentity(notificationPath);
 
             _stateMap = CreateFileMapping(statePath, _stateSize, options, out _stateFileStream, out stateInitRequired);
+            _notificationMap =
+                CreateFileMapping(notificationPath, _notificationSize, options, out _notificationFileStream, out _);
             _dataMaps[0] = CreateFileMapping(dataPath0, _regionSize, options, out _dataFileStreams[0], out _);
             _dataMaps[1] = CreateFileMapping(dataPath1, _regionSize, options, out _dataFileStreams[1], out _);
 
@@ -124,9 +152,11 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 if (!SingleWriterFileLock.TryAcquire(_stateFileStream))
                 {
                     Interlocked.Increment(ref _lockTimeouts);
+                    _notificationMap.Dispose();
                     _stateMap.Dispose();
                     _dataMaps[0].Dispose();
                     _dataMaps[1].Dispose();
+                    _notificationFileStream?.Dispose();
                     _stateFileStream.Dispose();
                     _dataFileStreams[0]?.Dispose();
                     _dataFileStreams[1]?.Dispose();
@@ -137,27 +167,66 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         else
         {
             var stateName = MemoryPrefix + name + StateSuffix;
+            var notificationName = MemoryPrefix + name + NotificationSuffix;
             var dataName0 = MemoryPrefix + name + DataSuffix0;
             var dataName1 = MemoryPrefix + name + DataSuffix1;
+            notificationIdentity = notificationName;
 
             _stateMap = CreateNamedMapping(stateName, _stateSize, options);
+            _notificationMap = CreateNamedMapping(notificationName, _notificationSize, options);
             _dataMaps[0] = CreateNamedMapping(dataName0, _regionSize, options);
             _dataMaps[1] = CreateNamedMapping(dataName1, _regionSize, options);
         }
 
         _stateAccessor = _stateMap.CreateViewAccessor(0, _stateSize, MemoryMappedFileAccess.ReadWrite);
+        _notificationAccessor = _notificationMap.CreateViewAccessor(0, _notificationSize, MemoryMappedFileAccess.ReadWrite);
         _dataAccessors[0] = _dataMaps[0].CreateViewAccessor(0, _regionSize, MemoryMappedFileAccess.ReadWrite);
         _dataAccessors[1] = _dataMaps[1].CreateViewAccessor(0, _regionSize, MemoryMappedFileAccess.ReadWrite);
 
         InitializeState(stateInitRequired);
-
-        _fileWaitHandle = CreateEventWaitHandle(name, options);
-        _disposeWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
-        _fileWatcherTask = Task.Run(FileWatcher);
+        InitializeNotificationState();
+        _notificationEventScope = CreateNotificationEventScope(type, notificationIdentity);
     }
 
     /// <inheritdoc />
-    public event EventHandler? FileUpdated;
+    public event EventHandler? FileUpdated
+    {
+        add
+        {
+            if (value == null)
+            {
+                return;
+            }
+
+            lock (_fileUpdatedLock)
+            {
+                ThrowIfDisposed();
+                _fileUpdated += value;
+                try
+                {
+                    EnsureNotificationListenerInitialized();
+                }
+                catch
+                {
+                    _fileUpdated -= value;
+                    throw;
+                }
+            }
+        }
+
+        remove
+        {
+            if (value == null)
+            {
+                return;
+            }
+
+            lock (_fileUpdatedLock)
+            {
+                _fileUpdated -= value;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public long MaxFileSize { get; }
@@ -348,7 +417,6 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     public void WriteRaw(ReadOnlySpan<byte> data, TimeSpan graceDuration, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        _watcherReady.Task.GetAwaiter().GetResult();
 
         if (data.Length > _regionSize)
         {
@@ -456,7 +524,6 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
 
         ThrowIfDisposed();
-        _watcherReady.Task.GetAwaiter().GetResult();
 
         using var readStream = MemoryStreamPool.Manager.GetStream(nameof(WaitFreeMemoryMappedFile));
         using var writeStream = MemoryStreamPool.Manager.GetStream(nameof(WaitFreeMemoryMappedFile));
@@ -534,19 +601,19 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
 
         _disposed = true;
-        _disposeWaitHandle.Set();
-        _fileWatcherTask?.Wait(_waitTimeout);
+        DisposeNotificationListener();
 
         if (disposing)
         {
+            _notificationAccessor.Dispose();
+            _notificationMap.Dispose();
             _stateAccessor.Dispose();
             _stateMap.Dispose();
             _dataAccessors[0].Dispose();
             _dataAccessors[1].Dispose();
             _dataMaps[0].Dispose();
             _dataMaps[1].Dispose();
-            _fileWaitHandle.Dispose();
-            _disposeWaitHandle.Dispose();
+            _notificationFileStream?.Dispose();
             _stateFileStream?.Dispose();
             _dataFileStreams[0]?.Dispose();
             _dataFileStreams[1]?.Dispose();
@@ -627,20 +694,20 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             false);
     }
 
-    private static EventWaitHandle CreateEventWaitHandle(string name, TigaIpcOptions options)
+    private static EventWaitHandle CreateEventWaitHandle(string eventScope, int slotIndex, TigaIpcOptions options)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrWhiteSpace(eventScope))
         {
-            throw new ArgumentException("EventWaitHandle must be named", nameof(name));
+            throw new ArgumentException("EventWaitHandle must be named", nameof(eventScope));
         }
 
-        var eventName = EventPrefix + name;
+        var eventName = GetNotificationEventName(eventScope, slotIndex);
         if (options?.EventWaitHandleFactory != null)
         {
             return options.EventWaitHandleFactory(eventName);
         }
 
-        return new EventWaitHandle(false, EventResetMode.ManualReset, eventName);
+        return new EventWaitHandle(false, EventResetMode.AutoReset, eventName);
     }
 
     private void InitializeState(bool forceReset)
@@ -670,6 +737,442 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 }
             }
         }
+    }
+
+    private void EnsureNotificationListenerInitialized()
+    {
+        if (_notificationListenerInitialized)
+        {
+            return;
+        }
+
+        EventWaitHandle? fileWaitHandle = null;
+        EventWaitHandle? disposeWaitHandle = null;
+        Task? fileWatcherTask = null;
+        TaskCompletionSource<bool>? watcherReady = null;
+        var slotIndex = -1;
+
+        try
+        {
+            slotIndex = RegisterNotificationSlot();
+            fileWaitHandle = CreateEventWaitHandle(_notificationEventScope, slotIndex, _options);
+            disposeWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
+            watcherReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            _fileWaitHandle = fileWaitHandle;
+            _notificationSlotIndex = slotIndex;
+            _disposeWaitHandle = disposeWaitHandle;
+
+            fileWatcherTask = Task.Run(() => FileWatcher(watcherReady, disposeWaitHandle, fileWaitHandle));
+            _fileWatcherTask = fileWatcherTask;
+            watcherReady.Task.GetAwaiter().GetResult();
+            _notificationListenerInitialized = true;
+        }
+        catch
+        {
+            if (disposeWaitHandle != null)
+            {
+                try
+                {
+                    disposeWaitHandle.Set();
+                }
+                catch
+                {
+                    // Best-effort rollback during listener initialization failure.
+                }
+            }
+
+            try
+            {
+                fileWatcherTask?.Wait(_waitTimeout);
+            }
+            catch
+            {
+                // Best-effort rollback during listener initialization failure.
+            }
+
+            if (slotIndex >= 0)
+            {
+                UnregisterNotificationSlot(slotIndex);
+            }
+
+            fileWaitHandle?.Dispose();
+            disposeWaitHandle?.Dispose();
+
+            _fileWaitHandle = null;
+            _disposeWaitHandle = null;
+            _fileWatcherTask = null;
+            _notificationSlotIndex = -1;
+            _notificationListenerInitialized = false;
+            throw;
+        }
+    }
+
+    private unsafe void InitializeNotificationState()
+    {
+        byte* pointer = null;
+        var handle = _notificationAccessor.SafeMemoryMappedViewHandle;
+        try
+        {
+            handle.AcquirePointer(ref pointer);
+            var slots = (NotificationSlot*)pointer;
+            for (var i = 0; i < NotificationSlotCount; i++)
+            {
+                if (Volatile.Read(ref slots[i].Token) == 0)
+                {
+                    Volatile.Write(ref slots[i].OwnerProcessId, 0);
+                    Volatile.Write(ref slots[i].OwnerProcessStartTimeUtcTicks, 0);
+                }
+            }
+        }
+        finally
+        {
+            if (pointer != null)
+            {
+                handle.ReleasePointer();
+            }
+        }
+    }
+
+    private unsafe int RegisterNotificationSlot()
+    {
+        byte* pointer = null;
+        var handle = _notificationAccessor.SafeMemoryMappedViewHandle;
+        try
+        {
+            handle.AcquirePointer(ref pointer);
+            var slots = (NotificationSlot*)pointer;
+
+            for (var i = 0; i < NotificationSlotCount; i++)
+            {
+                ref var slot = ref slots[i];
+                var token = Volatile.Read(ref slot.Token);
+                if (token == 0)
+                {
+                    if (Interlocked.CompareExchange(ref slot.Token, _notificationSlotToken, 0) == 0)
+                    {
+                        Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, _currentProcessStartTimeUtcTicks);
+                        Volatile.Write(ref slot.OwnerProcessId, _currentProcessId);
+                        return i;
+                    }
+
+                    continue;
+                }
+
+                var ownerProcessId = Volatile.Read(ref slot.OwnerProcessId);
+                if (ownerProcessId == 0)
+                {
+                    if (IsTokenOwnedByLiveProcess(token))
+                    {
+                        continue;
+                    }
+
+                    if (Interlocked.CompareExchange(ref slot.Token, _notificationSlotToken, token) == token)
+                    {
+                        Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, _currentProcessStartTimeUtcTicks);
+                        Volatile.Write(ref slot.OwnerProcessId, _currentProcessId);
+                        return i;
+                    }
+
+                    continue;
+                }
+
+                var ownerProcessStartTimeUtcTicks = Volatile.Read(ref slot.OwnerProcessStartTimeUtcTicks);
+                if (IsSameLiveProcess(ownerProcessId, ownerProcessStartTimeUtcTicks))
+                {
+                    continue;
+                }
+
+                if (Interlocked.CompareExchange(ref slot.Token, _notificationSlotToken, token) == token)
+                {
+                    Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, _currentProcessStartTimeUtcTicks);
+                    Volatile.Write(ref slot.OwnerProcessId, _currentProcessId);
+                    return i;
+                }
+            }
+        }
+        finally
+        {
+            if (pointer != null)
+            {
+                handle.ReleasePointer();
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"No notification slots are available for '{Name}'. Increase slot capacity or dispose unused readers.");
+    }
+
+    private void UnregisterNotificationSlot()
+    {
+        if (_notificationSlotIndex < 0)
+        {
+            return;
+        }
+
+        UnregisterNotificationSlot(_notificationSlotIndex);
+        _notificationSlotIndex = -1;
+    }
+
+    private unsafe void UnregisterNotificationSlot(int slotIndex)
+    {
+        if (slotIndex < 0)
+        {
+            return;
+        }
+
+        byte* pointer = null;
+        var handle = _notificationAccessor.SafeMemoryMappedViewHandle;
+        try
+        {
+            handle.AcquirePointer(ref pointer);
+            var slots = (NotificationSlot*)pointer;
+            ref var slot = ref slots[slotIndex];
+            Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, 0);
+            Volatile.Write(ref slot.OwnerProcessId, 0);
+            Interlocked.CompareExchange(ref slot.Token, 0, _notificationSlotToken);
+        }
+        finally
+        {
+            if (pointer != null)
+            {
+                handle.ReleasePointer();
+            }
+        }
+    }
+
+    private unsafe void SignalUpdated()
+    {
+        byte* pointer = null;
+        var handle = _notificationAccessor.SafeMemoryMappedViewHandle;
+        try
+        {
+            handle.AcquirePointer(ref pointer);
+            var slots = (NotificationSlot*)pointer;
+            for (var i = 0; i < NotificationSlotCount; i++)
+            {
+                ref var slot = ref slots[i];
+                var token = Volatile.Read(ref slot.Token);
+                if (token == 0)
+                {
+                    continue;
+                }
+
+                var ownerProcessId = Volatile.Read(ref slot.OwnerProcessId);
+                if (ownerProcessId == 0)
+                {
+                    if (!IsTokenOwnedByLiveProcess(token))
+                    {
+                        Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, 0);
+                        Volatile.Write(ref slot.OwnerProcessId, 0);
+                        Interlocked.CompareExchange(ref slot.Token, 0, token);
+                    }
+
+                    continue;
+                }
+
+                var ownerProcessStartTimeUtcTicks = Volatile.Read(ref slot.OwnerProcessStartTimeUtcTicks);
+                if (!IsSameLiveProcess(ownerProcessId, ownerProcessStartTimeUtcTicks))
+                {
+                    Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, 0);
+                    Volatile.Write(ref slot.OwnerProcessId, 0);
+                    Interlocked.CompareExchange(ref slot.Token, 0, token);
+                    continue;
+                }
+
+                GetSlotSignalHandle(i).Set();
+            }
+        }
+        finally
+        {
+            if (pointer != null)
+            {
+                handle.ReleasePointer();
+            }
+        }
+    }
+
+    private EventWaitHandle GetSlotSignalHandle(int slotIndex)
+    {
+        lock (_slotSignalHandlesLock)
+        {
+            if (slotIndex == _notificationSlotIndex && _fileWaitHandle != null)
+            {
+                return _fileWaitHandle;
+            }
+
+            _slotSignalHandles[slotIndex] ??= CreateEventWaitHandle(_notificationEventScope, slotIndex, _options);
+            return _slotSignalHandles[slotIndex]!;
+        }
+    }
+
+    private void DisposeSlotSignalHandles()
+    {
+        lock (_slotSignalHandlesLock)
+        {
+            for (var i = 0; i < _slotSignalHandles.Length; i++)
+            {
+                _slotSignalHandles[i]?.Dispose();
+                _slotSignalHandles[i] = null;
+            }
+        }
+    }
+
+    private void DisposeNotificationListener()
+    {
+        _disposeWaitHandle?.Set();
+
+        try
+        {
+            _fileWatcherTask?.Wait(_waitTimeout);
+        }
+        catch
+        {
+            // Dispose should remain best-effort even if a watcher is faulted.
+        }
+
+        UnregisterNotificationSlot();
+        DisposeSlotSignalHandles();
+        _fileWaitHandle?.Dispose();
+        _disposeWaitHandle?.Dispose();
+        _fileWaitHandle = null;
+        _disposeWaitHandle = null;
+        _fileWatcherTask = null;
+        _notificationListenerInitialized = false;
+    }
+
+    private static string GetNotificationEventName(string eventScope, int slotIndex)
+    {
+        return $"{EventPrefix}{eventScope}{NotificationEventSuffix}{slotIndex}";
+    }
+
+    private static string CreateNotificationEventScope(MappingType mappingType, string notificationIdentity)
+    {
+        var bytes = Encoding.UTF8.GetBytes(notificationIdentity);
+        var hash = WyHash.Hash(bytes);
+        return $"{mappingType.ToString().ToLowerInvariant()}_{hash:x16}";
+    }
+
+    private static string NormalizeNotificationIdentity(string notificationIdentity)
+    {
+        var normalized = Path.GetFullPath(notificationIdentity);
+        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? normalized.ToUpperInvariant()
+            : normalized;
+    }
+
+    private static bool IsSameLiveProcess(int processId, long expectedStartTimeUtcTicks)
+    {
+        if (processId <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            if (expectedStartTimeUtcTicks == 0)
+            {
+                return true;
+            }
+
+            return process.StartTime.ToUniversalTime().Ticks == expectedStartTimeUtcTicks;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static int GetCurrentProcessId()
+    {
+        using var process = Process.GetCurrentProcess();
+        return process.Id;
+    }
+
+    private static long GetCurrentProcessStartTimeUtcTicks()
+    {
+        try
+        {
+            using var process = Process.GetCurrentProcess();
+            return process.StartTime.ToUniversalTime().Ticks;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static bool IsTokenOwnedByLiveProcess(long token)
+    {
+        if (!TryGetNotificationSlotTokenIdentity(token, out var processId, out var processStartMarker))
+        {
+            return false;
+        }
+
+        if (processId <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            if (processStartMarker == 0)
+            {
+                return true;
+            }
+
+            return CreateNotificationProcessStartMarker(process.StartTime.ToUniversalTime().Ticks) == processStartMarker;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetNotificationSlotTokenIdentity(long token, out int processId, out uint processStartMarker)
+    {
+        if (token == 0)
+        {
+            processId = 0;
+            processStartMarker = 0;
+            return false;
+        }
+
+        var value = unchecked((ulong)token);
+        processId = unchecked((int)(value >> 32));
+        processStartMarker = unchecked((uint)value);
+        return processId > 0;
+    }
+
+    private static uint CreateNotificationProcessStartMarker(long processStartTimeUtcTicks)
+    {
+        if (processStartTimeUtcTicks == 0)
+        {
+            return 0;
+        }
+
+        var value = unchecked((ulong)processStartTimeUtcTicks);
+        return unchecked((uint)(value ^ (value >> 32)));
+    }
+
+    private static long CreateNotificationSlotToken(int processId, long processStartTimeUtcTicks)
+    {
+        var normalizedProcessId = processId > 0 ? processId : 1;
+        var processStartMarker = CreateNotificationProcessStartMarker(processStartTimeUtcTicks);
+        var token = ((long)(uint)normalizedProcessId << 32) | processStartMarker;
+        return token == 0 ? 1 : token;
     }
 
     private WaitFreeVersion ReadVersion()
@@ -895,12 +1398,6 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         SignalUpdated();
     }
 
-    private void SignalUpdated()
-    {
-        _fileWaitHandle.Set();
-        _fileWaitHandle.Reset();
-    }
-
     private uint ComputeChecksum(ReadOnlySpan<byte> data)
     {
         var hash = _checksumProvider(data);
@@ -924,19 +1421,22 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         return (uint)(hashSpan & ChecksumMask);
     }
 
-    private async Task FileWatcher()
+    private async Task FileWatcher(
+        TaskCompletionSource<bool> watcherReady,
+        EventWaitHandle disposeWaitHandle,
+        EventWaitHandle fileWaitHandle)
     {
-        _watcherReady.TrySetResult(true);
+        watcherReady.TrySetResult(true);
 
         var waitHandles = new[]
         {
-            _disposeWaitHandle,
-            _fileWaitHandle,
+            disposeWaitHandle,
+            fileWaitHandle,
         };
 
         while (!_disposed)
         {
-            var result = WaitHandle.WaitAny(waitHandles, _waitTimeout);
+            var result = WaitHandle.WaitAny(waitHandles);
 
             if (result == 0 || _disposed)
             {
@@ -945,7 +1445,13 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
             if (result == 1)
             {
-                FileUpdated?.Invoke(this, EventArgs.Empty);
+                EventHandler? handlers;
+                lock (_fileUpdatedLock)
+                {
+                    handlers = _fileUpdated;
+                }
+
+                handlers?.Invoke(this, EventArgs.Empty);
             }
 
             await Task.Yield();
@@ -1039,6 +1545,15 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         {
             return new ReadResult(owner, version, switched);
         }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NotificationSlot
+    {
+        public long Token;
+        public long OwnerProcessStartTimeUtcTicks;
+        public int OwnerProcessId;
+        public int Reserved;
     }
 
     [StructLayout(LayoutKind.Sequential)]
