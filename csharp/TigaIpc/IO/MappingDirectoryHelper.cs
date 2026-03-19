@@ -1,35 +1,26 @@
-using System.Runtime.InteropServices;
-
 namespace TigaIpc.IO;
 
 internal static class MappingDirectoryHelper
 {
-    internal const string FilePrefix = "DmCommunication_";
+    internal const string FilePrefix = "tiga_";
     internal const string StateSuffix = "_state";
 
     internal static string ResolveBaseDirectory(TigaIpcOptions options)
     {
+        if (options == null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
         var baseDirectory = options.FileMappingDirectory;
         if (string.IsNullOrWhiteSpace(baseDirectory))
         {
-            if ((RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ||
-                 RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) &&
-                Directory.Exists("/dev/shm"))
-            {
-                baseDirectory = "/dev/shm";
-            }
-            else
-            {
-                var localAppDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                baseDirectory = Path.Combine(localAppDataPath, "Innodealing", ".cache");
-            }
+            throw new InvalidOperationException(
+                "File-backed mappings require TigaIpcOptions.FileMappingDirectory to be configured.");
         }
 
-        if (!Directory.Exists(baseDirectory))
-        {
-            Directory.CreateDirectory(baseDirectory);
-        }
-
-        return baseDirectory;
+        var resolvedBaseDirectory = Path.GetFullPath(baseDirectory);
+        Directory.CreateDirectory(resolvedBaseDirectory);
+        return resolvedBaseDirectory;
     }
 }

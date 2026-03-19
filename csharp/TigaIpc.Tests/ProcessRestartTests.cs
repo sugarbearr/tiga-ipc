@@ -73,24 +73,45 @@ public class ProcessRestartTests
 
     private static string FindTestHostPath()
     {
+        var preferredConfiguration = ResolvePreferredConfiguration(AppContext.BaseDirectory);
+        var fallbackConfiguration = string.Equals(preferredConfiguration, "Release", StringComparison.OrdinalIgnoreCase)
+            ? "Debug"
+            : "Release";
         var baseDir = new DirectoryInfo(AppContext.BaseDirectory);
         for (var i = 0; i < 6 && baseDir != null; i++)
         {
-            var candidateDebug = Path.Combine(baseDir.FullName, "TigaIpc.TestHost", "bin", "Debug", "net6.0", "TigaIpc.TestHost.dll");
-            if (File.Exists(candidateDebug))
+            var preferredCandidate = Path.Combine(baseDir.FullName, "TigaIpc.TestHost", "bin", preferredConfiguration, "net6.0", "TigaIpc.TestHost.dll");
+            if (File.Exists(preferredCandidate))
             {
-                return candidateDebug;
+                return preferredCandidate;
             }
 
-            var candidateRelease = Path.Combine(baseDir.FullName, "TigaIpc.TestHost", "bin", "Release", "net6.0", "TigaIpc.TestHost.dll");
-            if (File.Exists(candidateRelease))
+            var fallbackCandidate = Path.Combine(baseDir.FullName, "TigaIpc.TestHost", "bin", fallbackConfiguration, "net6.0", "TigaIpc.TestHost.dll");
+            if (File.Exists(fallbackCandidate))
             {
-                return candidateRelease;
+                return fallbackCandidate;
             }
 
             baseDir = baseDir.Parent;
         }
 
         throw new FileNotFoundException("Could not locate TigaIpc.TestHost.dll");
+    }
+
+    private static string ResolvePreferredConfiguration(string baseDirectory)
+    {
+        var releaseMarker = $"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}";
+        if (baseDirectory.Contains(releaseMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Release";
+        }
+
+        var debugMarker = $"{Path.DirectorySeparatorChar}Debug{Path.DirectorySeparatorChar}";
+        if (baseDirectory.Contains(debugMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Debug";
+        }
+
+        return "Release";
     }
 }

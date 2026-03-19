@@ -40,6 +40,7 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
 
         if (_mappingType == MappingType.File)
         {
+            MappingDirectoryHelper.ResolveBaseDirectory(_options.Value ?? new TigaIpcOptions());
             _discoveryTask = Task.Run(DiscoverClientsAsync, _cancellationTokenSource.Token);
         }
     }

@@ -65,7 +65,8 @@ namespace TigaIpc
         public ChecksumProvider? ChecksumProvider { get; set; }
 
         /// <summary>
-        /// Gets or sets base directory for file-backed mappings (optional).
+        /// Gets or sets base directory for file-backed mappings.
+        /// Required when <see cref="MappingType.File"/> is used.
         /// </summary>
         public string? FileMappingDirectory { get; set; }
 

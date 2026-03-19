@@ -10,7 +10,7 @@ using TigaIpc.Messaging;
 namespace TigaIpc.Client;
 
 [MessagePackObject]
-public class CookieParams
+public class ProfileRequest
 {
     [Key(0)] public string? Name { get; set; }
 
@@ -22,14 +22,22 @@ public class CookieParams
 [SupportedOSPlatform("windows")]
 class Program
 {
-    private const string ChannelName = "Excel";
+    private const string ChannelName = "SampleChannel";
+    private const string EchoMethodName = "echo";
+    private const string FetchProfileMethodName = "fetchProfile";
+    private const string BackgroundJobMethodName = "backgroundJob";
+    private const string NotifyOnlyMethodName = "notifyOnly";
 
     static async Task Main(string[] args)
     {
+        var mappingDir = ResolveMappingDirectory(args);
+        if (mappingDir == null)
+        {
+            return;
+        }
+
         var clientId = Environment.GetEnvironmentVariable("TIGA_IPC_CLIENT_ID") ??
                        $"{Environment.ProcessId}-{Guid.NewGuid():N}";
-        var mappingDir = Environment.GetEnvironmentVariable("TIGA_IPC_DIR")
-                         ?? Path.Combine(Path.GetTempPath(), "tiga-ipc");
         var ipcOptions = new TigaIpcOptions
         {
             Name = ChannelName,
@@ -101,26 +109,26 @@ class Program
                                 var payload = argument ?? "hello";
                                 Console.WriteLine($"Sending invoke: {payload}...");
                                 var sw = Stopwatch.StartNew();
-                                var response = await messageBus.InvokeAsync("method", payload, cancellationToken: cts.Token);
+                                var response = await messageBus.InvokeAsync(EchoMethodName, payload, cancellationToken: cts.Token);
                                 sw.Stop();
                                 Console.WriteLine($"Response ({sw.ElapsedMilliseconds}ms): {response}");
                                 break;
                             }
-                        case "cookie":
+                        case "profile":
                             {
                                 var name = argument ?? "guest";
-                                var cookie = new CookieParams
+                                var profileRequest = new ProfileRequest
                                 {
                                     Name = name,
                                     RequestUrl = "https://example.com",
                                     Timeout = 5000,
                                 };
-                                Console.WriteLine($"Requesting cookie for: {name}...");
+                                Console.WriteLine($"Requesting profile for: {name}...");
                                 var sw = Stopwatch.StartNew();
-                                // Note: Server expects "GetAllCookie" with CookieParams and returns EventResult
-                                var response = await messageBus.InvokeAsync<EventResult>(
-                                    "GetAllCookie",
-                                    cookie,
+                                // Note: Server expects fetchProfile with ProfileRequest and returns OperationResult.
+                                var response = await messageBus.InvokeAsync<OperationResult>(
+                                    FetchProfileMethodName,
+                                    profileRequest,
                                     cancellationToken: cts.Token);
                                 sw.Stop();
                                 Console.WriteLine($"Response ({sw.ElapsedMilliseconds}ms): {response?.Result ?? "<null>"}");
@@ -134,20 +142,20 @@ class Program
                                 Console.WriteLine("Message published.");
                                 break;
                             }
-                        case "bg": // Test method2 which is async on server
+                        case "bg": // Test the async background job example.
                             {
-                                Console.WriteLine("Calling method2 (background task)...");
+                                Console.WriteLine($"Calling {BackgroundJobMethodName}...");
                                 var sw = Stopwatch.StartNew();
-                                var response = await messageBus.InvokeAsync<EventResult>("method2", cancellationToken: cts.Token);
+                                var response = await messageBus.InvokeAsync<OperationResult>(BackgroundJobMethodName, cancellationToken: cts.Token);
                                 sw.Stop();
                                 Console.WriteLine($"Response ({sw.ElapsedMilliseconds}ms): {response?.Result}");
                                 break;
                             }
-                        case "void": // Test method3 which returns void (Task)
+                        case "void": // Test the async notification example.
                             {
-                                Console.WriteLine("Calling method3 (void)...");
+                                Console.WriteLine($"Calling {NotifyOnlyMethodName}...");
                                 var sw = Stopwatch.StartNew();
-                                await messageBus.InvokeAsync("method3", cancellationToken: cts.Token);
+                                await messageBus.InvokeAsync(NotifyOnlyMethodName, cancellationToken: cts.Token);
                                 sw.Stop();
                                 Console.WriteLine($"Completed ({sw.ElapsedMilliseconds}ms).");
                                 break;
@@ -161,7 +169,7 @@ class Program
                                 for (int i = 0; i < count; i++)
                                 {
                                     if (cts.IsCancellationRequested) break;
-                                    await messageBus.InvokeAsync("method", $"stress-{i}", cancellationToken: cts.Token);
+                                    await messageBus.InvokeAsync(EchoMethodName, $"stress-{i}", cancellationToken: cts.Token);
                                     if (i % 10 == 0) Console.Write(".");
                                 }
                                 sw.Stop();
@@ -205,14 +213,32 @@ class Program
         Console.WriteLine("Bye!");
     }
 
+    private static string? ResolveMappingDirectory(string[] args)
+    {
+        if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
+        {
+            return args[0];
+        }
+
+        var mappingDir = Environment.GetEnvironmentVariable("TIGA_IPC_DIR");
+        if (!string.IsNullOrWhiteSpace(mappingDir))
+        {
+            return mappingDir;
+        }
+
+        Console.Error.WriteLine(
+            "Mapping directory is required. Pass it as the first argument or set TIGA_IPC_DIR.");
+        return null;
+    }
+
     private static void PrintHelp()
     {
         Console.WriteLine("Available commands:");
-        Console.WriteLine("  invoke <text>   - Call 'method' with string payload");
-        Console.WriteLine("  cookie <name>   - Call 'GetAllCookie' with structured data");
+        Console.WriteLine($"  invoke <text>   - Call '{EchoMethodName}' with string payload");
+        Console.WriteLine($"  profile <name>  - Call '{FetchProfileMethodName}' with structured data");
         Console.WriteLine("  publish <text>  - Send a fire-and-forget message");
-        Console.WriteLine("  bg              - Call 'method2' (simulates background work)");
-        Console.WriteLine("  void            - Call 'method3' (returns void)");
+        Console.WriteLine($"  bg              - Call '{BackgroundJobMethodName}' (simulates background work)");
+        Console.WriteLine($"  void            - Call '{NotifyOnlyMethodName}' (returns void)");
         Console.WriteLine("  stress <count>  - Run <count> invocations sequentially");
         Console.WriteLine("  cls             - Clear screen");
         Console.WriteLine("  help            - Show this help");
@@ -220,7 +246,7 @@ class Program
     }
 }
 
-public class EventResult
+public class OperationResult
 {
     public string Result { get; set; } = string.Empty;
 }

@@ -13,6 +13,18 @@ export interface TigaEntry {
   message: Buffer
   mediaType?: string
 }
-export declare function tigaWrite(name: string, message: Buffer | string, mediaType?: string | null): string
-export declare function tigaRead(name: string, lastId?: number): TigaReadResult
-export declare function tigaInvoke(requestName: string, responseName: string, method: string, data: string, timeoutMs?: number): string
+export interface TigaChannelOptions {
+  mappingDirectory?: string
+}
+export interface TigaWriteOptions extends TigaChannelOptions {
+  mediaType?: string | null
+}
+export interface TigaReadOptions extends TigaChannelOptions {
+  lastId?: number
+}
+export interface TigaInvokeOptions extends TigaChannelOptions {
+  timeoutMs?: number
+}
+export declare function tigaWrite(name: string, message: Buffer | string, options?: TigaWriteOptions): string
+export declare function tigaRead(name: string, options?: TigaReadOptions): TigaReadResult
+export declare function tigaInvoke(requestName: string, responseName: string, method: string, data: string, options?: TigaInvokeOptions): string

@@ -4,35 +4,40 @@ These examples interoperate with `TigaIpc.Server` and `TigaIpc.Client` using the
 
 ## 1) Start the C# server
 
-From `E:\native\dm_native\TigaIpc`:
+From the monorepo root:
 
 ```powershell
 # build once
- dotnet build .\TigaIpc.Server\TigaIpc.Server.csproj -c Release
+dotnet build .\csharp\TigaIpc.Server\TigaIpc.Server.csproj -c Release
 
 # run server
- dotnet run --project .\TigaIpc.Server\TigaIpc.Server.csproj -c Release
+$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+dotnet run --project .\csharp\TigaIpc.Server\TigaIpc.Server.csproj -c Release
 ```
 
 ## 2) Run the Node client (invoke)
 
-From `E:\native\dm_cross\InnodealingNativeCross\mmap-napi`:
+From `.\nodejs\mmap-napi`:
 
 ```powershell
 # build native addon (creates index.node)
- npm run build
+npm run build
 
 # run example
- node .\examples\tiga_invoke.js
+$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+node .\examples\tiga_invoke.js
 ```
 
 ## 3) Run the Node response listener (optional)
 
 ```powershell
+$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
 node .\examples\tiga_read.js
 ```
 
 Notes:
-- The default base channel name is `Excel` (matches C# samples).
+- The default base channel name is `SampleChannel` (matches the C# samples).
+- The invoke example calls the `echo` handler on the sample server.
 - `TIGA_IPC_CLIENT_ID` can be set to a fixed client id for testing.
-- To match the C# server directory, set `TIGA_IPC_DIR` to the same directory as `FileMappingDirectory` (default: `%TEMP%\\tiga-ipc`).
+- The library no longer uses a hidden default local cache directory.
+- The examples read `TIGA_IPC_DIR` and pass it into the addon as `mappingDirectory`.

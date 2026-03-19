@@ -1,35 +1,54 @@
-use dirs::data_local_dir;
 use std::path::PathBuf;
 
-const FILE_PREFIX: &str = "DmCommunication_";
-const TEMP_SUBDIR: &str = "tiga-ipc";
+const FILE_PREFIX: &str = "tiga_";
 
-pub(super) fn resolve_tiga_prefix(name: &str) -> Option<PathBuf> {
-    let root = get_mmap_root_path()?;
-    Some(root.join(format!("{FILE_PREFIX}{name}")))
+pub(super) fn resolve_tiga_prefix(name: &str, mapping_directory: Option<&str>) -> Result<PathBuf, String> {
+    let root = get_mmap_root_path(mapping_directory)?;
+    Ok(root.join(format!("{FILE_PREFIX}{name}")))
 }
 
-fn get_mmap_root_path() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("TIGA_IPC_DIR") {
-        return ensure_directory(PathBuf::from(dir));
-    }
+fn get_mmap_root_path(mapping_directory: Option<&str>) -> Result<PathBuf, String> {
+    let mapping_directory = mapping_directory
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            "mappingDirectory option is required for file-backed tiga channels".to_string()
+        })?;
 
-    if let Ok(temp_dir) = std::env::var("TEMP") {
-        let path = PathBuf::from(temp_dir).join(TEMP_SUBDIR);
-        if let Some(existing) = ensure_directory(path) {
-            return Some(existing);
-        }
-    }
-
-    let local_app_data_path = data_local_dir()?;
-    let mmap_root_path = local_app_data_path.join("innodealing").join(".cache");
-    ensure_directory(mmap_root_path)
+    ensure_directory(PathBuf::from(mapping_directory))
 }
 
-fn ensure_directory(path: PathBuf) -> Option<PathBuf> {
+fn ensure_directory(path: PathBuf) -> Result<PathBuf, String> {
     if path.exists() || std::fs::create_dir_all(&path).is_ok() {
-        Some(path)
+        Ok(path)
     } else {
-        None
+        Err(format!(
+            "failed to create mappingDirectory '{}'",
+            path.display()
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_tiga_prefix;
+
+    #[test]
+    fn resolve_tiga_prefix_uses_mapping_directory_from_options() {
+        let base_dir =
+            std::env::temp_dir().join(format!("mmap_napi_paths_{}", uuid::Uuid::new_v4()));
+
+        let prefix = resolve_tiga_prefix("sample", Some(&base_dir.to_string_lossy()))
+            .expect("resolve prefix");
+
+        assert_eq!(prefix, base_dir.join("tiga_sample"));
+
+        let _ = std::fs::remove_dir_all(base_dir);
+    }
+
+    #[test]
+    fn resolve_tiga_prefix_requires_mapping_directory_option() {
+        let error = resolve_tiga_prefix("sample", None).expect_err("missing mappingDirectory");
+        assert!(error.contains("mappingDirectory"), "actual error: {error}");
     }
 }

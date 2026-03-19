@@ -32,11 +32,13 @@ public class SecurityFactoryTests
     public void FileStreamFactory_IsUsed()
     {
         var name = "file_factory_" + Guid.NewGuid().ToString("N");
+        var baseDir = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
         var invoked = false;
 
         var options = new TigaIpcOptions
         {
             Name = name,
+            FileMappingDirectory = baseDir,
             FileStreamFactory = (path, capacity) =>
             {
                 invoked = true;

@@ -5,6 +5,7 @@ use crate::tiga_logbook::LogEntry;
 use crate::tiga_notify::{signal_updated, wait_for_listener, NotificationListener};
 use crate::tiga_protocol::{build_invoke_message, parse_response_message};
 use crate::tiga_sys::now_timestamp_ticks;
+use crate::TigaInvokeOptions;
 
 use super::common::{
     make_instance, napi_error, push_log_entry, read_logbook_or_default,
@@ -17,13 +18,14 @@ pub fn tiga_invoke_impl(
     response_name: String,
     method: String,
     data: String,
-    timeout_ms: Option<i64>,
+    options: Option<TigaInvokeOptions>,
 ) -> Result<String, napi::Error> {
-    let timeout_ms = timeout_ms.unwrap_or(30_000) as u64;
-    let request_prefix =
-        resolve_tiga_prefix(&request_name).ok_or_else(|| napi_error("mmap root not found"))?;
-    let response_prefix =
-        resolve_tiga_prefix(&response_name).ok_or_else(|| napi_error("mmap root not found"))?;
+    let timeout_ms = options.as_ref().and_then(|value| value.timeout_ms).unwrap_or(30_000) as u64;
+    let mapping_directory = options.as_ref().and_then(|value| value.mapping_directory.as_deref());
+    let request_prefix = resolve_tiga_prefix(&request_name, mapping_directory)
+        .map_err(|message| napi_error(&message))?;
+    let response_prefix = resolve_tiga_prefix(&response_name, mapping_directory)
+        .map_err(|message| napi_error(&message))?;
     let wait_budget = Duration::from_millis(timeout_ms);
 
     let mut request_channel = TigaChannel::open(request_prefix.clone())?;

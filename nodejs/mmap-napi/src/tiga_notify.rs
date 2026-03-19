@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::tiga_sys::open_file_shared;
 
-pub(super) const EVENT_PREFIX: &str = "TinyMemoryMappedFile_WaitHandle_";
+pub(super) const EVENT_PREFIX: &str = "tiga_wait_handle_";
 pub(super) const NOTIFICATION_SUFFIX: &str = "_notify";
 pub(super) const NOTIFICATION_EVENT_SUFFIX: &str = "_slot_";
 pub(super) const NOTIFICATION_SLOT_COUNT: usize = 128;
@@ -106,7 +106,7 @@ mod tests {
         let base_dir =
             std::env::temp_dir().join(format!("mmap_napi_notify_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&base_dir).expect("create temp directory");
-        let prefix = PathBuf::from(base_dir.join("DmCommunication_notify_test"));
+        let prefix = PathBuf::from(base_dir.join("tiga_notify_test"));
 
         ensure_notification_layout(&prefix).expect("ensure notification layout");
         let listener =

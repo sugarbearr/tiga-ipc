@@ -1,14 +1,16 @@
 use napi::bindgen_prelude::Buffer;
 
-use crate::{TigaEntry, TigaReadResult};
+use crate::{TigaEntry, TigaReadOptions, TigaReadResult};
 
 use super::common::napi_error;
 use super::paths::resolve_tiga_prefix;
 use crate::tiga_channel::TigaChannel;
 
-pub fn tiga_read_impl(name: String, last_id: Option<i64>) -> Result<TigaReadResult, napi::Error> {
-    let last_id = last_id.unwrap_or(0);
-    let prefix = resolve_tiga_prefix(&name).ok_or_else(|| napi_error("mmap root not found"))?;
+pub fn tiga_read_impl(name: String, options: Option<TigaReadOptions>) -> Result<TigaReadResult, napi::Error> {
+    let last_id = options.as_ref().and_then(|value| value.last_id).unwrap_or(0);
+    let prefix =
+        resolve_tiga_prefix(&name, options.as_ref().and_then(|value| value.mapping_directory.as_deref()))
+            .map_err(|message| napi_error(&message))?;
 
     let mut channel = TigaChannel::open(prefix)?;
     let (logbook, _) = match channel.read_logbook() {

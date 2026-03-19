@@ -11,7 +11,6 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "2.16.0", default-features = false, features = ["napi6"] }
 napi-derive = "2.16.0"
-dirs = "6.0.0"
 memmap2 = "0.9.5"
 rmp = "0.8.14"
 rmpv = "1.0.0"

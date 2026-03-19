@@ -8,14 +8,24 @@ if (typeof mmap.tigaRead !== 'function') {
 }
 
 const clientId = process.env.TIGA_IPC_CLIENT_ID || `node-${process.pid}`;
-const base = 'Excel';
+const mappingDirectory = process.argv[2] || process.env.TIGA_IPC_DIR;
+
+if (!mappingDirectory) {
+  console.error(
+    'mappingDirectory is required. Pass it as argv[2] or set TIGA_IPC_DIR.',
+  );
+  process.exit(1);
+}
+
+const base = 'SampleChannel';
 const resp = `${base}.resp.${clientId}`;
 
 let lastId = 0;
+console.log(`mappingDirectory=${mappingDirectory}`);
 console.log(`listening on ${resp}`);
 
 setInterval(() => {
-  const result = mmap.tigaRead(resp, lastId);
+  const result = mmap.tigaRead(resp, { lastId, mappingDirectory });
   lastId = result.lastId;
   for (const entry of result.entries) {
     console.log(

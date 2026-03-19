@@ -11,15 +11,22 @@ namespace TigaIpc.Server;
 [SupportedOSPlatform("windows")]
 class Program
 {
-    private const string ChannelName = "Excel";
+    private const string ChannelName = "SampleChannel";
+    private const string EchoMethodName = "echo";
+    private const string FetchProfileMethodName = "fetchProfile";
+    private const string BackgroundJobMethodName = "backgroundJob";
+    private const string NotifyOnlyMethodName = "notifyOnly";
 
     private static async Task Main(string[] args)
     {
+        var mappingDir = ResolveMappingDirectory(args);
+        if (mappingDir == null)
+        {
+            return;
+        }
+
         Console.WriteLine("=== TigaIpc Server Example ===");
         Console.WriteLine($"Channel Name: {ChannelName}");
-
-        var mappingDir = Environment.GetEnvironmentVariable("TIGA_IPC_DIR")
-                         ?? Path.Combine(Path.GetTempPath(), "tiga-ipc");
         Console.WriteLine($"Mapping Directory: {mappingDir}");
 
         // 1. Configure IPC Options
@@ -57,42 +64,42 @@ class Program
 
         // Handle 'invoke' method (Request/Response)
         // Simple string -> string
-        messageBus.Register("method", payload =>
+        messageBus.Register(EchoMethodName, payload =>
         {
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] method received: '{payload}'");
-            return $"Echo from Server: {payload}";
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {EchoMethodName} received: '{payload}'");
+            return $"Echo response: {payload}";
         });
 
-        // Handle 'GetAllCookie' method (Typed Request/Response)
-        // CookieParams -> EventResult
-        messageBus.RegisterAsync<CookieParams, EventResult>("GetAllCookie", async (payload, token) =>
+        // Handle a typed request/response example.
+        // ProfileRequest -> OperationResult
+        messageBus.RegisterAsync<ProfileRequest, OperationResult>(FetchProfileMethodName, async (payload, token) =>
         {
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] GetAllCookie: {JsonConvert.SerializeObject(payload)}");
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {FetchProfileMethodName}: {JsonConvert.SerializeObject(payload)}");
 
             // Simulate work
             await Task.Delay(100, token);
 
-            return new EventResult
+            return new OperationResult
             {
-                Result = $"Cookie '{payload?.Name ?? "unknown"}' validated for {payload?.RequestUrl}"
+                Result = $"Profile '{payload?.Name ?? "unknown"}' prepared for {payload?.RequestUrl}"
             };
         });
 
-        // Handle 'method2' (Async with result)
-        messageBus.RegisterAsync<EventResult>("method2", async () =>
+        // Handle an async request with a typed result.
+        messageBus.RegisterAsync<OperationResult>(BackgroundJobMethodName, async () =>
         {
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] method2 (background task) started...");
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {BackgroundJobMethodName} started...");
             await Task.Delay(500); // Simulate longer work
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] method2 completed.");
-            return new EventResult { Result = "Background work complete" };
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {BackgroundJobMethodName} completed.");
+            return new OperationResult { Result = "Background work complete" };
         });
 
-        // Handle 'method3' (Async void - no return value expected by caller, but we return Task)
-        messageBus.RegisterAsync("method3", async () =>
+        // Handle an async notification with no payload/result contract.
+        messageBus.RegisterAsync(NotifyOnlyMethodName, async () =>
         {
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] method3 (void) started...");
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {NotifyOnlyMethodName} started...");
             await Task.Delay(50);
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] method3 completed.");
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {NotifyOnlyMethodName} completed.");
         });
 
         // 4. Background Server Tasks (e.g. Heartbeat)
@@ -138,10 +145,28 @@ class Program
 
         Console.WriteLine("Server stopped.");
     }
+
+    private static string? ResolveMappingDirectory(string[] args)
+    {
+        if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
+        {
+            return args[0];
+        }
+
+        var mappingDir = Environment.GetEnvironmentVariable("TIGA_IPC_DIR");
+        if (!string.IsNullOrWhiteSpace(mappingDir))
+        {
+            return mappingDir;
+        }
+
+        Console.Error.WriteLine(
+            "Mapping directory is required. Pass it as the first argument or set TIGA_IPC_DIR.");
+        return null;
+    }
 }
 
 [MessagePackObject]
-public class CookieParams
+public class ProfileRequest
 {
     [Key(0)] public string? Name { get; set; }
 
@@ -150,7 +175,7 @@ public class CookieParams
     [Key(2)] public int? Timeout { get; set; }
 }
 
-public class EventResult
+public class OperationResult
 {
     public string Result { get; set; } = string.Empty;
 }

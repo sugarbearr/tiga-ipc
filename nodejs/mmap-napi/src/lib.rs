@@ -30,6 +30,36 @@ pub struct TigaEntry {
     pub media_type: Option<String>,
 }
 
+#[napi(object)]
+pub struct TigaChannelOptions {
+    #[napi(js_name = "mappingDirectory")]
+    pub mapping_directory: Option<String>,
+}
+
+#[napi(object)]
+pub struct TigaWriteOptions {
+    #[napi(js_name = "mediaType")]
+    pub media_type: Option<String>,
+    #[napi(js_name = "mappingDirectory")]
+    pub mapping_directory: Option<String>,
+}
+
+#[napi(object)]
+pub struct TigaReadOptions {
+    #[napi(js_name = "lastId")]
+    pub last_id: Option<i64>,
+    #[napi(js_name = "mappingDirectory")]
+    pub mapping_directory: Option<String>,
+}
+
+#[napi(object)]
+pub struct TigaInvokeOptions {
+    #[napi(js_name = "timeoutMs")]
+    pub timeout_ms: Option<i64>,
+    #[napi(js_name = "mappingDirectory")]
+    pub mapping_directory: Option<String>,
+}
+
 #[napi(js_name = "tigaWrite")]
 pub fn tiga_write(
     #[napi(ts_arg_type = "string")] name: String,
@@ -37,17 +67,17 @@ pub fn tiga_write(
         String,
         napi::bindgen_prelude::Buffer,
     >,
-    #[napi(ts_arg_type = "string | null")] media_type: Option<String>,
+    options: Option<TigaWriteOptions>,
 ) -> Result<String, napi::Error> {
-    tiga_write_impl(name, message, media_type)
+    tiga_write_impl(name, message, options)
 }
 
 #[napi(js_name = "tigaRead")]
 pub fn tiga_read(
     #[napi(ts_arg_type = "string")] name: String,
-    #[napi(ts_arg_type = "number")] last_id: Option<i64>,
+    options: Option<TigaReadOptions>,
 ) -> Result<TigaReadResult, napi::Error> {
-    tiga_read_impl(name, last_id)
+    tiga_read_impl(name, options)
 }
 
 #[napi(js_name = "tigaInvoke")]
@@ -56,7 +86,7 @@ pub fn tiga_invoke(
     #[napi(ts_arg_type = "string")] response_name: String,
     #[napi(ts_arg_type = "string")] method: String,
     #[napi(ts_arg_type = "string")] data: String,
-    #[napi(ts_arg_type = "number")] timeout_ms: Option<i64>,
+    options: Option<TigaInvokeOptions>,
 ) -> Result<String, napi::Error> {
-    tiga_invoke_impl(request_name, response_name, method, data, timeout_ms)
+    tiga_invoke_impl(request_name, response_name, method, data, options)
 }

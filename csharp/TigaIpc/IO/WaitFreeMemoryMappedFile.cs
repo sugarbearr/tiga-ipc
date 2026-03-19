@@ -18,12 +18,12 @@ namespace TigaIpc.IO;
 /// </summary>
 public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchronizationMetricsProvider
 {
-    private const string FilePrefix = "DmCommunication_";
-    private const string MemoryPrefix = "DmCommunicationMappedFile_";
+    private const string FilePrefix = "tiga_";
+    private const string MemoryPrefix = "tiga_mapped_file_";
     private const string StateSuffix = "_state";
     private const string DataSuffix0 = "_data_0";
     private const string DataSuffix1 = "_data_1";
-    private const string EventPrefix = "TinyMemoryMappedFile_WaitHandle_";
+    private const string EventPrefix = "tiga_wait_handle_";
     private const string NotificationSuffix = "_notify";
     private const string NotificationEventSuffix = "_slot_";
     private const int NotificationSlotCount = 128;
@@ -630,27 +630,7 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
     private static string GetFilePrefix(string name, TigaIpcOptions options)
     {
-        var baseDirectory = options.FileMappingDirectory;
-        if (string.IsNullOrWhiteSpace(baseDirectory))
-        {
-            if ((RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ||
-                 RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) &&
-                Directory.Exists("/dev/shm"))
-            {
-                baseDirectory = "/dev/shm";
-            }
-            else
-            {
-                var localAppDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                baseDirectory = Path.Combine(localAppDataPath, "Innodealing", ".cache");
-            }
-        }
-
-        if (!Directory.Exists(baseDirectory))
-        {
-            Directory.CreateDirectory(baseDirectory);
-        }
-
+        var baseDirectory = MappingDirectoryHelper.ResolveBaseDirectory(options);
         return Path.Combine(baseDirectory, FilePrefix + name);
     }
 
