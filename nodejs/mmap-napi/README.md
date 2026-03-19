@@ -100,3 +100,7 @@ Returns the response payload string.
 - This package intentionally uses the current `tiga*` API only. The old generic `write/read` export surface is not part of the published package entry.
 - The native binary is packaged as `index.node`, so publish from a Windows environment after rebuilding the addon you want to ship.
 - For repository examples and cross-language smoke tests, see the monorepo root README and `examples/`.
+
+## License
+
+MIT

@@ -112,10 +112,10 @@ TigaIpc/
 
 ## 环境变量速查
 
-| 变量名 | 作用 | C# 示例 | Node 示例 |
-| --- | --- | --- | --- |
-| `TIGA_IPC_DIR` | 指定文件映射目录；服务端与客户端必须一致 | 示例程序读取后传给 `TigaIpcOptions.FileMappingDirectory` | 示例程序读取后传给 `mappingDirectory` |
-| `TIGA_IPC_CLIENT_ID` | 指定客户端标识，用于拼接 `req/resp` 通道名 | 默认使用 `进程号-Guid` | 默认使用 `node-<pid>` |
+| 变量名                  | 作用                          | C# 示例                                           | Node 示例                      |
+| -------------------- | --------------------------- | ----------------------------------------------- | ---------------------------- |
+| `TIGA_IPC_DIR`       | 指定文件映射目录；服务端与客户端必须一致        | 示例程序读取后传给 `TigaIpcOptions.FileMappingDirectory` | 示例程序读取后传给 `mappingDirectory` |
+| `TIGA_IPC_CLIENT_ID` | 指定客户端标识，用于拼接 `req/resp` 通道名 | 默认使用 `进程号-Guid`                                 | 默认使用 `node-<pid>`            |
 
 如果你只是想先把互通跑通，最关键的是：
 
@@ -468,4 +468,4 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 
 ## License
 
-MIT
+MIT. See [LICENSE](./LICENSE).

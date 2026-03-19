@@ -12,6 +12,7 @@
     }
   },
   "files": [
+    "LICENSE",
     "README.md",
     "index.js",
     "index.d.ts",
@@ -36,8 +37,8 @@
     "napi-rs",
     "tiga"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "TigaIpc contributors",
+  "license": "MIT",
   "publishConfig": {
     "access": "public"
   },

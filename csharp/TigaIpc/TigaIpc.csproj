@@ -7,8 +7,18 @@
 		<TargetFrameworks>net6.0;netstandard2.0;netstandard2.1</TargetFrameworks>
 		<LangVersion>13.0</LangVersion>
 		<WarningLevel>8</WarningLevel>
-		<Authors>com.innodealing.native</Authors>
+		<Authors>TigaIpc contributors</Authors>
+		<Company>TigaIpc</Company>
+		<Product>TigaIpc</Product>
+		<Description>High-performance local IPC library built on memory-mapped files.</Description>
+		<PackageTags>ipc;mmap;memory-mapped-file;message-bus;interprocess-communication;tiga</PackageTags>
+		<PackageProjectUrl>https://github.com/sugarbearr/TigaIpc</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/sugarbearr/TigaIpc</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
 		<Version>0.0.4-rc1</Version>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<Copyright>Copyright (c) 2026 TigaIpc contributors</Copyright>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
@@ -41,6 +51,10 @@
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(TargetFramework)' == 'netstandard2.0' OR '$(TargetFramework)' == 'net6.0'">
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="..\..\README.md" Pack="true" PackagePath="\" Link="README.md" />
 	</ItemGroup>
 
 </Project>
