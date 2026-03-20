@@ -96,7 +96,9 @@ fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_notification_layout, signal_updated, wait_for_listener, NotificationListener};
+    use super::{
+        ensure_notification_layout, signal_updated, wait_for_listener, NotificationListener,
+    };
     use std::path::PathBuf;
     use std::time::Duration;
 

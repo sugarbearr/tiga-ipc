@@ -40,7 +40,7 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
 
         if (_mappingType == MappingType.File)
         {
-            MappingDirectoryHelper.ResolveBaseDirectory(_options.Value ?? new TigaIpcOptions());
+            IpcDirectoryHelper.ResolveIpcDirectory(_options.Value ?? new TigaIpcOptions());
             _discoveryTask = Task.Run(DiscoverClientsAsync, _cancellationTokenSource.Token);
         }
     }
@@ -233,20 +233,20 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
     private async Task DiscoverClientsAsync()
     {
         var optionsValue = _options.Value ?? new TigaIpcOptions();
-        var baseDirectory = MappingDirectoryHelper.ResolveBaseDirectory(optionsValue);
-        var prefix = $"{MappingDirectoryHelper.FilePrefix}{_name}.req.";
-        var suffix = MappingDirectoryHelper.StateSuffix;
+        var ipcDirectory = IpcDirectoryHelper.ResolveIpcDirectory(optionsValue);
+        var prefix = $"{IpcDirectoryHelper.FilePrefix}{_name}.req.";
+        var suffix = IpcDirectoryHelper.StateSuffix;
         var pollInterval = optionsValue.ClientDiscoveryInterval <= TimeSpan.Zero
             ? TimeSpan.FromSeconds(1)
             : optionsValue.ClientDiscoveryInterval;
         Console.WriteLine(
-            $"[PerClientDiscovery] baseDirectory={baseDirectory} prefix={prefix} suffix={suffix} interval={pollInterval.TotalMilliseconds}ms");
+            $"[PerClientDiscovery] ipcDirectory={ipcDirectory} prefix={prefix} suffix={suffix} interval={pollInterval.TotalMilliseconds}ms");
 
         while (!_cancellationTokenSource.IsCancellationRequested)
         {
             try
             {
-                foreach (var file in Directory.EnumerateFiles(baseDirectory, $"{prefix}*{suffix}"))
+                foreach (var file in Directory.EnumerateFiles(ipcDirectory, $"{prefix}*{suffix}"))
                 {
                     var fileName = Path.GetFileName(file);
                     if (fileName == null)

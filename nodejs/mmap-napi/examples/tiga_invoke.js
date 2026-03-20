@@ -8,21 +8,22 @@ if (typeof mmap.tigaInvoke !== 'function') {
 }
 
 const clientId = process.env.TIGA_IPC_CLIENT_ID || `node-${process.pid}`;
-const mappingDirectory = process.argv[2] || process.env.TIGA_IPC_DIR;
+const ipcDirectory = process.argv[2] || process.env.TIGA_IPC_DIRECTORY;
 
-if (!mappingDirectory) {
+if (!ipcDirectory) {
   console.error(
-    'mappingDirectory is required. Pass it as argv[2] or set TIGA_IPC_DIR.',
+    'ipcDirectory is required. Pass it as argv[2] or set TIGA_IPC_DIRECTORY.',
   );
   process.exit(1);
 }
 
-const base = 'SampleChannel';
-const req = `${base}.req.${clientId}`;
-const resp = `${base}.resp.${clientId}`;
+const channelName = process.env.TIGA_CHANNEL_NAME || 'SampleChannel';
+const req = `${channelName}.req.${clientId}`;
+const resp = `${channelName}.resp.${clientId}`;
 
 console.log(`clientId=${clientId}`);
-console.log(`mappingDirectory=${mappingDirectory}`);
+console.log(`channelName=${channelName}`);
+console.log(`ipcDirectory=${ipcDirectory}`);
 console.log(`request=${req}`);
 console.log(`response=${resp}`);
 
@@ -31,6 +32,6 @@ const reply = mmap.tigaInvoke(
   resp,
   'echo',
   `hello from ${clientId}`,
-  { timeoutMs: 5000, mappingDirectory },
+  { timeoutMs: 5000, ipcDirectory },
 );
 console.log('invoke reply:', reply);

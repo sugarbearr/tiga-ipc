@@ -11,7 +11,7 @@ public class RawReadWriteTests
         var name = "raw_roundtrip_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             MaxFileSize = 64 * 1024,
         };
 
@@ -33,7 +33,7 @@ public class RawReadWriteTests
         var name = "typed_roundtrip_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             MaxFileSize = 64 * 1024,
         };
 

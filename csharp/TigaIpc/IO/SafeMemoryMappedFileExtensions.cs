@@ -22,7 +22,8 @@ public static class SafeMemoryMappedFileExtensions
         Func<MemoryStream, T> readData,
         T defaultValue,
         ILogger? logger = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -59,7 +60,8 @@ public static class SafeMemoryMappedFileExtensions
         MemoryStream data,
         ILogger? logger = null,
         CancellationToken cancellationToken = default,
-        int retryCount = 3)
+        int retryCount = 3
+    )
     {
         for (int i = 0; i < retryCount; i++)
         {
@@ -72,8 +74,12 @@ public static class SafeMemoryMappedFileExtensions
             {
                 if (i == retryCount - 1)
                 {
-                    logger?.LogWarning(ex, "Timeout occurred while writing to memory mapped file (attempt {Attempt}/{MaxAttempts})",
-                        i + 1, retryCount);
+                    logger?.LogWarning(
+                        ex,
+                        "Timeout occurred while writing to memory mapped file (attempt {Attempt}/{MaxAttempts})",
+                        i + 1,
+                        retryCount
+                    );
                 }
                 // 在下一次重试前稍微延迟
                 if (i < retryCount - 1)
@@ -88,8 +94,12 @@ public static class SafeMemoryMappedFileExtensions
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Error occurred while writing to memory mapped file (attempt {Attempt}/{MaxAttempts})",
-                    i + 1, retryCount);
+                logger?.LogError(
+                    ex,
+                    "Error occurred while writing to memory mapped file (attempt {Attempt}/{MaxAttempts})",
+                    i + 1,
+                    retryCount
+                );
                 if (i < retryCount - 1)
                 {
                     Thread.Sleep(50 * (i + 1));
@@ -113,7 +123,8 @@ public static class SafeMemoryMappedFileExtensions
         Action<MemoryStream, MemoryStream> updateFunc,
         ILogger? logger = null,
         CancellationToken cancellationToken = default,
-        int retryCount = 3)
+        int retryCount = 3
+    )
     {
         for (int i = 0; i < retryCount; i++)
         {
@@ -126,8 +137,12 @@ public static class SafeMemoryMappedFileExtensions
             {
                 if (i == retryCount - 1)
                 {
-                    logger?.LogWarning(ex, "Timeout occurred during ReadWrite operation on memory mapped file (attempt {Attempt}/{MaxAttempts})",
-                        i + 1, retryCount);
+                    logger?.LogWarning(
+                        ex,
+                        "Timeout occurred during ReadWrite operation on memory mapped file (attempt {Attempt}/{MaxAttempts})",
+                        i + 1,
+                        retryCount
+                    );
                 }
                 // 在下一次重试前稍微延迟
                 if (i < retryCount - 1)
@@ -142,8 +157,12 @@ public static class SafeMemoryMappedFileExtensions
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Error occurred during ReadWrite operation on memory mapped file (attempt {Attempt}/{MaxAttempts})",
-                    i + 1, retryCount);
+                logger?.LogError(
+                    ex,
+                    "Error occurred during ReadWrite operation on memory mapped file (attempt {Attempt}/{MaxAttempts})",
+                    i + 1,
+                    retryCount
+                );
                 if (i < retryCount - 1)
                 {
                     Thread.Sleep(50 * (i + 1));

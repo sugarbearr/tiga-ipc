@@ -11,7 +11,7 @@ public class PerClientTopologyTests
     public async Task Invoke_FromMultipleClients_ReturnsResponses()
     {
         var name = $"per-client-{Guid.NewGuid():N}";
-        var options = new TigaIpcOptions { Name = name };
+        var options = new TigaIpcOptions { ChannelName = name };
         var optionsWrapper = new OptionsWrapper<TigaIpcOptions>(options);
 
         await using var server = new TigaPerClientServer(name, MappingType.Memory, optionsWrapper);

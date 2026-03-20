@@ -20,7 +20,7 @@ public class ChecksumProviderTests
 
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             MaxFileSize = 64 * 1024,
             ChecksumProvider = provider,
             VerifyChecksumOnRead = true,

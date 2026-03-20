@@ -8,24 +8,25 @@ if (typeof mmap.tigaRead !== 'function') {
 }
 
 const clientId = process.env.TIGA_IPC_CLIENT_ID || `node-${process.pid}`;
-const mappingDirectory = process.argv[2] || process.env.TIGA_IPC_DIR;
+const ipcDirectory = process.argv[2] || process.env.TIGA_IPC_DIRECTORY;
 
-if (!mappingDirectory) {
+if (!ipcDirectory) {
   console.error(
-    'mappingDirectory is required. Pass it as argv[2] or set TIGA_IPC_DIR.',
+    'ipcDirectory is required. Pass it as argv[2] or set TIGA_IPC_DIRECTORY.',
   );
   process.exit(1);
 }
 
-const base = 'SampleChannel';
-const resp = `${base}.resp.${clientId}`;
+const channelName = process.env.TIGA_CHANNEL_NAME || 'SampleChannel';
+const resp = `${channelName}.resp.${clientId}`;
 
 let lastId = 0;
-console.log(`mappingDirectory=${mappingDirectory}`);
+console.log(`channelName=${channelName}`);
+console.log(`ipcDirectory=${ipcDirectory}`);
 console.log(`listening on ${resp}`);
 
 setInterval(() => {
-  const result = mmap.tigaRead(resp, { lastId, mappingDirectory });
+  const result = mmap.tigaRead(resp, { lastId, ipcDirectory });
   lastId = result.lastId;
   for (const entry of result.entries) {
     console.log(

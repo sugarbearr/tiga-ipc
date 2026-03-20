@@ -7,4 +7,4 @@ public class MessageBusOptions
     public bool EnableCompression { get; set; } = true;
     public int CompressionThreshold { get; set; } = 1024;
     public bool EnableMetrics { get; set; } = true;
-} 
+}

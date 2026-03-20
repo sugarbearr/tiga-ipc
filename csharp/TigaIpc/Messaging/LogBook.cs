@@ -24,7 +24,7 @@ public readonly record struct LogBook(
     public int CountEntriesToTrim(TimeProvider timeProvider, TimeSpan minMessageAge)
     {
 #if NET7_0_OR_GREATER
-            ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 #else
         if (timeProvider is null)
         {

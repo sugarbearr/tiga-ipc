@@ -26,17 +26,17 @@ const ensureString = (value, label) => {
   return value.trim();
 };
 
-const getStatePath = (mappingDirectory, name) =>
-  path.join(mappingDirectory, `${FILE_PREFIX}${name}${STATE_SUFFIX}`);
+const getStatePath = (ipcDirectory, name) =>
+  path.join(ipcDirectory, `${FILE_PREFIX}${name}${STATE_SUFFIX}`);
 
-const hasSingleChannel = (baseName, mappingDirectory) =>
-  fs.existsSync(getStatePath(mappingDirectory, baseName));
+const hasSingleChannel = (channelName, ipcDirectory) =>
+  fs.existsSync(getStatePath(ipcDirectory, channelName));
 
-const listClientIds = (baseName, mappingDirectory) => {
+const listClientIds = (channelName, ipcDirectory) => {
   try {
-    const prefix = `${FILE_PREFIX}${baseName}.req.`;
+    const prefix = `${FILE_PREFIX}${channelName}.req.`;
     return fs
-      .readdirSync(mappingDirectory)
+      .readdirSync(ipcDirectory)
       .filter((fileName) => fileName.startsWith(prefix))
       .filter((fileName) => fileName.endsWith(STATE_SUFFIX))
       .map((fileName) =>
@@ -48,29 +48,26 @@ const listClientIds = (baseName, mappingDirectory) => {
   }
 };
 
-const toClientState = (clientId, baseName) =>
+const toClientState = (clientId, channelName) =>
   clientId === SINGLE_CLIENT_ID
     ? {
         key: SINGLE_CLIENT_ID,
         clientId,
-        requestName: baseName,
-        responseName: baseName,
+        requestName: channelName,
+        responseName: channelName,
       }
     : {
         key: clientId,
         clientId,
-        requestName: `${baseName}.req.${clientId}`,
-        responseName: `${baseName}.resp.${clientId}`,
+        requestName: `${channelName}.req.${clientId}`,
+        responseName: `${channelName}.resp.${clientId}`,
       };
 
 class TigaServer {
   constructor(options) {
     const resolved = options || {};
-    this.baseName = ensureString(resolved.baseName, 'baseName');
-    this.mappingDirectory = ensureString(
-      resolved.mappingDirectory,
-      'mappingDirectory',
-    );
+    this.channelName = ensureString(resolved.channelName, 'channelName');
+    this.ipcDirectory = ensureString(resolved.ipcDirectory, 'ipcDirectory');
     if (typeof resolved.onInvoke !== 'function') {
       throw new Error('onInvoke must be a function');
     }
@@ -98,23 +95,23 @@ class TigaServer {
       return this;
     }
 
-    fs.mkdirSync(this.mappingDirectory, { recursive: true });
+    fs.mkdirSync(this.ipcDirectory, { recursive: true });
     this.started = true;
     this.closed = false;
     this.discoveryTimer = setInterval(() => {
       this.discover().catch((error) => {
         this.reportError(error, {
           stage: 'discover',
-          baseName: this.baseName,
-          mappingDirectory: this.mappingDirectory,
+          channelName: this.channelName,
+          ipcDirectory: this.ipcDirectory,
         });
       });
     }, this.discoveryIntervalMs);
     this.discover().catch((error) => {
       this.reportError(error, {
         stage: 'discover',
-        baseName: this.baseName,
-        mappingDirectory: this.mappingDirectory,
+        channelName: this.channelName,
+        ipcDirectory: this.ipcDirectory,
       });
     });
 
@@ -143,18 +140,18 @@ class TigaServer {
       return;
     }
 
-    const nextClients = listClientIds(this.baseName, this.mappingDirectory);
+    const nextClients = listClientIds(this.channelName, this.ipcDirectory);
     nextClients.forEach((clientId) => {
       if (!this.clients.has(clientId)) {
-        this.registerClient(toClientState(clientId, this.baseName));
+        this.registerClient(toClientState(clientId, this.channelName));
       }
     });
 
     if (
       !this.clients.has(SINGLE_CLIENT_ID) &&
-      hasSingleChannel(this.baseName, this.mappingDirectory)
+      hasSingleChannel(this.channelName, this.ipcDirectory)
     ) {
-      this.registerClient(toClientState(SINGLE_CLIENT_ID, this.baseName));
+      this.registerClient(toClientState(SINGLE_CLIENT_ID, this.channelName));
     }
   }
 
@@ -184,7 +181,7 @@ class TigaServer {
       {
         workerData: {
           name: client.requestName,
-          mappingDirectory: this.mappingDirectory,
+          ipcDirectory: this.ipcDirectory,
           waitTimeoutMs: this.waitTimeoutMs,
         },
       },
@@ -211,8 +208,8 @@ class TigaServer {
           clientId: client.clientId,
           requestName: client.requestName,
           responseName: client.responseName,
-          baseName: this.baseName,
-          mappingDirectory: this.mappingDirectory,
+          channelName: this.channelName,
+          ipcDirectory: this.ipcDirectory,
         });
       }
     });
@@ -223,8 +220,8 @@ class TigaServer {
         clientId: client.clientId,
         requestName: client.requestName,
         responseName: client.responseName,
-        baseName: this.baseName,
-        mappingDirectory: this.mappingDirectory,
+        channelName: this.channelName,
+        ipcDirectory: this.ipcDirectory,
       });
     });
 
@@ -283,7 +280,7 @@ class TigaServer {
     try {
       result = binding.tigaRead(client.requestName, {
         lastId: client.lastId,
-        mappingDirectory: this.mappingDirectory,
+        ipcDirectory: this.ipcDirectory,
       });
     } catch (error) {
       this.reportError(error, {
@@ -291,8 +288,8 @@ class TigaServer {
         clientId: client.clientId,
         requestName: client.requestName,
         responseName: client.responseName,
-        baseName: this.baseName,
-        mappingDirectory: this.mappingDirectory,
+        channelName: this.channelName,
+        ipcDirectory: this.ipcDirectory,
       });
       return;
     }
@@ -322,11 +319,11 @@ class TigaServer {
     }
 
     const context = {
-      baseName: this.baseName,
+      channelName: this.channelName,
       clientId: client.clientId,
       requestName: client.requestName,
       responseName: client.responseName,
-      mappingDirectory: this.mappingDirectory,
+      ipcDirectory: this.ipcDirectory,
       requestId: invoke.id,
       entryId: entry.id,
       mediaType: entry.mediaType || null,
@@ -362,7 +359,7 @@ class TigaServer {
     try {
       binding.tigaWrite(client.responseName, payload, {
         mediaType: TIGA_MEDIA_TYPE_MSGPACK,
-        mappingDirectory: this.mappingDirectory,
+        ipcDirectory: this.ipcDirectory,
       });
     } catch (error) {
       this.reportError(error, {
@@ -370,8 +367,8 @@ class TigaServer {
         clientId: client.clientId,
         requestName: client.requestName,
         responseName: client.responseName,
-        baseName: this.baseName,
-        mappingDirectory: this.mappingDirectory,
+        channelName: this.channelName,
+        ipcDirectory: this.ipcDirectory,
       });
     }
   }

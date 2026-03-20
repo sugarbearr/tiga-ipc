@@ -5,17 +5,17 @@ const targetPath = path.resolve(__dirname, '..', 'index.d.ts');
 const marker = 'export interface TigaServerContext {';
 const extraTypes = `
 export interface TigaServerContext {
-  baseName: string
+  channelName: string
   clientId: string
   requestName: string
   responseName: string
-  mappingDirectory: string
+  ipcDirectory: string
   requestId: string
   entryId: number
   mediaType?: string | null
 }
 export interface TigaServerOptions extends TigaChannelOptions {
-  baseName: string
+  channelName: string
   discoveryIntervalMs?: number
   waitTimeoutMs?: number
   onInvoke(method: string, data: unknown, context: TigaServerContext): unknown | Promise<unknown>
@@ -23,8 +23,8 @@ export interface TigaServerOptions extends TigaChannelOptions {
 }
 export declare class TigaServer {
   constructor(options: TigaServerOptions)
-  readonly baseName: string
-  readonly mappingDirectory: string
+  readonly channelName: string
+  readonly ipcDirectory: string
   readonly closed: boolean
   readonly started: boolean
   start(): TigaServer

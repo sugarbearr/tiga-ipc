@@ -2,11 +2,11 @@ namespace TigaIpc.Messaging;
 
 public static class PerClientChannelNames
 {
-    public static string GetRequestChannelName(string baseName, string clientId)
+    public static string GetRequestChannelName(string channelName, string clientId)
     {
-        if (string.IsNullOrWhiteSpace(baseName))
+        if (string.IsNullOrWhiteSpace(channelName))
         {
-            throw new ArgumentException("Base name must be provided.", nameof(baseName));
+            throw new ArgumentException("Channel name must be provided.", nameof(channelName));
         }
 
         if (string.IsNullOrWhiteSpace(clientId))
@@ -14,14 +14,14 @@ public static class PerClientChannelNames
             throw new ArgumentException("Client id must be provided.", nameof(clientId));
         }
 
-        return $"{baseName}.req.{clientId}";
+        return $"{channelName}.req.{clientId}";
     }
 
-    public static string GetResponseChannelName(string baseName, string clientId)
+    public static string GetResponseChannelName(string channelName, string clientId)
     {
-        if (string.IsNullOrWhiteSpace(baseName))
+        if (string.IsNullOrWhiteSpace(channelName))
         {
-            throw new ArgumentException("Base name must be provided.", nameof(baseName));
+            throw new ArgumentException("Channel name must be provided.", nameof(channelName));
         }
 
         if (string.IsNullOrWhiteSpace(clientId))
@@ -29,6 +29,6 @@ public static class PerClientChannelNames
             throw new ArgumentException("Client id must be provided.", nameof(clientId));
         }
 
-        return $"{baseName}.resp.{clientId}";
+        return $"{channelName}.resp.{clientId}";
     }
 }

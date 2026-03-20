@@ -9,8 +9,8 @@ internal static class SingleWriterFileLock
     private const int LockNb = 4;
 
     public static bool IsSupported =>
-        RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ||
-        RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+        RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+        || RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
     public static bool TryAcquire(FileStream stream)
     {
@@ -21,7 +21,9 @@ internal static class SingleWriterFileLock
 
         if (!IsSupported)
         {
-            throw new PlatformNotSupportedException("Single-writer lock is supported only on Unix via flock.");
+            throw new PlatformNotSupportedException(
+                "Single-writer lock is supported only on Unix via flock."
+            );
         }
 
         SafeFileHandle handle = stream.SafeFileHandle;

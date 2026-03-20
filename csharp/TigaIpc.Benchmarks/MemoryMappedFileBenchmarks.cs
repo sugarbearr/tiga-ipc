@@ -19,7 +19,7 @@ public class MemoryMappedFileBenchmarks
         var name = "bench_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             MaxFileSize = 1024 * 1024,
             WaitTimeout = TimeSpan.FromSeconds(2),
         };

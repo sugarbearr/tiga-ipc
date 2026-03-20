@@ -30,7 +30,7 @@ static int HoldReaderLease(string name)
 {
     var options = new TigaIpcOptions
     {
-        Name = name,
+        ChannelName = name,
         WaitTimeout = TimeSpan.FromSeconds(2),
         ReaderGraceTimeout = TimeSpan.FromSeconds(2),
         MaxFileSize = 64 * 1024,
@@ -54,7 +54,7 @@ static int PublishBurst(string name, string? countArg)
 
     var options = new TigaIpcOptions
     {
-        Name = name,
+        ChannelName = name,
         WaitTimeout = TimeSpan.FromSeconds(2),
         InvokeTimeout = TimeSpan.FromSeconds(5),
         MinMessageAge = TimeSpan.FromMilliseconds(100),
@@ -76,7 +76,7 @@ static int HoldSingleWriterLock(string name)
 {
     var options = new TigaIpcOptions
     {
-        Name = name,
+        ChannelName = name,
         UseSingleWriterLock = true,
         WaitTimeout = TimeSpan.FromSeconds(2),
         MinMessageAge = TimeSpan.FromMilliseconds(100),

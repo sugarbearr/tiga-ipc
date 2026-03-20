@@ -1,18 +1,18 @@
 const mmap = require('..');
 
-const mappingDirectory = process.env.TIGA_IPC_DIR || process.argv[2];
-const baseName = process.env.TIGA_IPC_NAME || 'SampleChannel';
+const ipcDirectory = process.env.TIGA_IPC_DIRECTORY || process.argv[2];
+const channelName = process.env.TIGA_CHANNEL_NAME || 'SampleChannel';
 
-if (!mappingDirectory) {
+if (!ipcDirectory) {
   console.error(
-    'mappingDirectory is required. Set TIGA_IPC_DIR or pass it as argv[2].',
+    'ipcDirectory is required. Set TIGA_IPC_DIRECTORY or pass it as argv[2].',
   );
   process.exit(1);
 }
 
 const server = mmap.startTigaServer({
-  baseName,
-  mappingDirectory,
+  channelName,
+  ipcDirectory,
   onInvoke(method, data) {
     switch (method) {
       case 'echo':
@@ -26,8 +26,8 @@ const server = mmap.startTigaServer({
   },
 });
 
-console.log(`baseName=${baseName}`);
-console.log(`mappingDirectory=${mappingDirectory}`);
+console.log(`channelName=${channelName}`);
+console.log(`ipcDirectory=${ipcDirectory}`);
 console.log('server ready');
 
 const shutdown = async () => {

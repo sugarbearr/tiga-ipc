@@ -11,7 +11,7 @@ namespace TigaIpc.Server;
 [SupportedOSPlatform("windows")]
 class Program
 {
-    private const string ChannelName = "SampleChannel";
+    private const string DefaultChannelName = "SampleChannel";
     private const string EchoMethodName = "echo";
     private const string FetchProfileMethodName = "fetchProfile";
     private const string BackgroundJobMethodName = "backgroundJob";
@@ -19,21 +19,22 @@ class Program
 
     private static async Task Main(string[] args)
     {
-        var mappingDir = ResolveMappingDirectory(args);
-        if (mappingDir == null)
+        var channelName = ResolveChannelName();
+        var ipcDirectory = ResolveIpcDirectory(args);
+        if (ipcDirectory == null)
         {
             return;
         }
 
         Console.WriteLine("=== TigaIpc Server Example ===");
-        Console.WriteLine($"Channel Name: {ChannelName}");
-        Console.WriteLine($"Mapping Directory: {mappingDir}");
+        Console.WriteLine($"Channel Name: {channelName}");
+        Console.WriteLine($"IPC Directory: {ipcDirectory}");
 
         // 1. Configure IPC Options
         var ipcOptions = new TigaIpcOptions
         {
-            Name = ChannelName,
-            FileMappingDirectory = mappingDir,
+            ChannelName = channelName,
+            IpcDirectory = ipcDirectory,
             LogBookSchemaVersion = 1,
             AllowLegacyLogBook = true,
         }.WithRobustConfiguration();
@@ -42,7 +43,7 @@ class Program
         // TigaPerClientServer manages client connections automatically.
         // It listens on the main channel for discovery and creates per-client channels.
         await using var messageBus = new TigaPerClientServer(
-            ChannelName,
+            channelName,
             MappingType.File,
             Options.Create(ipcOptions));
 
@@ -146,22 +147,28 @@ class Program
         Console.WriteLine("Server stopped.");
     }
 
-    private static string? ResolveMappingDirectory(string[] args)
+    private static string? ResolveIpcDirectory(string[] args)
     {
         if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
         {
             return args[0];
         }
 
-        var mappingDir = Environment.GetEnvironmentVariable("TIGA_IPC_DIR");
-        if (!string.IsNullOrWhiteSpace(mappingDir))
+        var ipcDirectory = Environment.GetEnvironmentVariable("TIGA_IPC_DIRECTORY");
+        if (!string.IsNullOrWhiteSpace(ipcDirectory))
         {
-            return mappingDir;
+            return ipcDirectory;
         }
 
         Console.Error.WriteLine(
-            "Mapping directory is required. Pass it as the first argument or set TIGA_IPC_DIR.");
+            "IPC directory is required. Pass it as the first argument or set TIGA_IPC_DIRECTORY.");
         return null;
+    }
+
+    private static string ResolveChannelName()
+    {
+        var channelName = Environment.GetEnvironmentVariable("TIGA_CHANNEL_NAME");
+        return string.IsNullOrWhiteSpace(channelName) ? DefaultChannelName : channelName.Trim();
     }
 }
 

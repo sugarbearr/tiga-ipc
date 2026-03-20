@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$MappingDirectory,
+    [string]$IpcDirectory,
     [string]$ClientId = "sample-client",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
@@ -15,25 +15,25 @@ $serverProject = Join-Path $repoRoot "csharp/TigaIpc.Server/TigaIpc.Server.cspro
 $nodeDirectory = Join-Path $repoRoot "nodejs/mmap-napi"
 $nodeExample = Join-Path $nodeDirectory "examples/tiga_invoke.js"
 
-if ([string]::IsNullOrWhiteSpace($MappingDirectory)) {
-    $MappingDirectory = Join-Path $env:TEMP ("tiga-ipc-smoke-" + [Guid]::NewGuid().ToString("N"))
+if ([string]::IsNullOrWhiteSpace($IpcDirectory)) {
+    $IpcDirectory = Join-Path $env:TEMP ("tiga-ipc-smoke-" + [Guid]::NewGuid().ToString("N"))
 }
 
-$MappingDirectory = [System.IO.Path]::GetFullPath($MappingDirectory)
-New-Item -ItemType Directory -Path $MappingDirectory -Force | Out-Null
+$IpcDirectory = [System.IO.Path]::GetFullPath($IpcDirectory)
+New-Item -ItemType Directory -Path $IpcDirectory -Force | Out-Null
 
-$serverOut = Join-Path $MappingDirectory "server.out.log"
-$serverErr = Join-Path $MappingDirectory "server.err.log"
+$serverOut = Join-Path $IpcDirectory "server.out.log"
+$serverErr = Join-Path $IpcDirectory "server.err.log"
 
 Write-Host "Repo Root        : $repoRoot"
-Write-Host "Mapping Directory: $MappingDirectory"
+Write-Host "IPC Directory    : $IpcDirectory"
 Write-Host "Client Id        : $ClientId"
 Write-Host "Configuration    : $Configuration"
 Write-Host "Skip Build       : $($SkipBuild.IsPresent)"
 
 Push-Location $repoRoot
 
-$originalMappingDir = $env:TIGA_IPC_DIR
+$originalIpcDirectory = $env:TIGA_IPC_DIRECTORY
 $originalClientId = $env:TIGA_IPC_CLIENT_ID
 $server = $null
 
@@ -62,7 +62,7 @@ try {
         }
     }
 
-    $env:TIGA_IPC_DIR = $MappingDirectory
+    $env:TIGA_IPC_DIRECTORY = $IpcDirectory
     $env:TIGA_IPC_CLIENT_ID = $ClientId
 
     Write-Host ""
@@ -118,10 +118,10 @@ finally {
         Stop-Process -Id $server.Id -Force
     }
 
-    if ($null -eq $originalMappingDir) {
-        Remove-Item Env:TIGA_IPC_DIR -ErrorAction SilentlyContinue
+    if ($null -eq $originalIpcDirectory) {
+        Remove-Item Env:TIGA_IPC_DIRECTORY -ErrorAction SilentlyContinue
     } else {
-        $env:TIGA_IPC_DIR = $originalMappingDir
+        $env:TIGA_IPC_DIRECTORY = $originalIpcDirectory
     }
 
     if ($null -eq $originalClientId) {

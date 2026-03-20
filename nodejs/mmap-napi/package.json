@@ -1,6 +1,6 @@
 {
   "name": "@tiga-ipc/mmap",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Windows memory-mapped IPC bindings for Tiga channels.",
   "main": "index.js",
   "types": "index.d.ts",

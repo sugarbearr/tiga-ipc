@@ -13,7 +13,7 @@ public class ProcessRestartTests
         var name = "restart_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             WaitTimeout = TimeSpan.FromSeconds(2),
             InvokeTimeout = TimeSpan.FromSeconds(5),
             MinMessageAge = TimeSpan.FromMilliseconds(100),

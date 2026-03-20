@@ -66,8 +66,7 @@ internal static class WyHash
                     seed2 = Wymix(Read64(p + 32) ^ Secret3, Read64(p + 40) ^ seed2);
                     p += 48;
                     i -= 48;
-                }
-                while (i > 48);
+                } while (i > 48);
                 seed ^= seed1 ^ seed2;
             }
 
@@ -103,9 +102,7 @@ internal static class WyHash
 
     private static unsafe ulong Read3(byte* data, int length)
     {
-        return ((ulong)data[0] << 16)
-               | ((ulong)data[length >> 1] << 8)
-               | data[length - 1];
+        return ((ulong)data[0] << 16) | ((ulong)data[length >> 1] << 8) | data[length - 1];
     }
 
     private static void Multiply64(ulong x, ulong y, out ulong high, out ulong low)

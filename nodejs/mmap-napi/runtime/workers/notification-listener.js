@@ -40,7 +40,7 @@ parentPort.on('message', (message) => {
 
 try {
   listener = createTigaNotificationListener(workerData.name, {
-    mappingDirectory: workerData.mappingDirectory,
+    ipcDirectory: workerData.ipcDirectory,
   });
   post({ type: 'ready' });
 

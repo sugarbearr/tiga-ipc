@@ -17,7 +17,11 @@ namespace TigaIpc.IO
         /// <param name="compress">Enable compression</param>
         /// <param name="compressionThreshold">Compression threshold (bytes), default is 256</param>
         /// <returns>BinaryData containing serialized data</returns>
-        public static BinaryData FromObjectAsMessagePack<T>(T obj, bool compress = false, int compressionThreshold = 256)
+        public static BinaryData FromObjectAsMessagePack<T>(
+            T obj,
+            bool compress = false,
+            int compressionThreshold = 256
+        )
         {
             var bytes = MessagePackSerializer.Serialize(obj, MessagePackOptions.Instance);
 
@@ -41,7 +45,10 @@ namespace TigaIpc.IO
             if (data.MediaType == "application/x-msgpack-compressed")
             {
                 var decompressedBytes = DecompressBytes(data.ToArray());
-                return MessagePackSerializer.Deserialize<T>(decompressedBytes, MessagePackOptions.Instance);
+                return MessagePackSerializer.Deserialize<T>(
+                    decompressedBytes,
+                    MessagePackOptions.Instance
+                );
             }
 
             return MessagePackSerializer.Deserialize<T>(data, MessagePackOptions.Instance);
@@ -80,7 +87,10 @@ namespace TigaIpc.IO
         {
             try
             {
-                if (data.MediaType == "application/x-msgpack" || data.MediaType == "application/x-msgpack-compressed")
+                if (
+                    data.MediaType == "application/x-msgpack"
+                    || data.MediaType == "application/x-msgpack-compressed"
+                )
                 {
                     result = data.ToObjectFromMessagePack<T>();
                     return true;

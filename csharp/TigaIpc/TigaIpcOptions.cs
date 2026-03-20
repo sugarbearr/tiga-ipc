@@ -20,9 +20,9 @@ namespace TigaIpc
         public static readonly TimeSpan DefaultClientDiscoveryInterval = TimeSpan.FromSeconds(1);
 
         /// <summary>
-        /// Gets or sets the name of this set of locks and memory mapped file, default value is process name.
+        /// Gets or sets the logical channel name for this IPC topology, default value is process name.
         /// </summary>
-        public string Name { get; set; } = Process.GetCurrentProcess().ProcessName;
+        public string ChannelName { get; set; } = Process.GetCurrentProcess().ProcessName;
 
         /// <summary>
         /// Gets or sets the maximum amount of data that can be written to the file memory mapped file, default is 1 MiB
@@ -65,10 +65,10 @@ namespace TigaIpc
         public ChecksumProvider? ChecksumProvider { get; set; }
 
         /// <summary>
-        /// Gets or sets base directory for file-backed mappings.
+        /// Gets or sets the IPC directory for file-backed mappings.
         /// Required when <see cref="MappingType.File"/> is used.
         /// </summary>
-        public string? FileMappingDirectory { get; set; }
+        public string? IpcDirectory { get; set; }
 
         /// <summary>
         /// Gets or sets log book schema version for serialization compatibility (default 1).

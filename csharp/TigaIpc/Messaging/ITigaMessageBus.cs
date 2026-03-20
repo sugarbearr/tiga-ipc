@@ -51,7 +51,12 @@ public partial interface ITigaMessageBus
     /// <param name="method">method name</param>
     /// <param name="data">data</param>
     /// <param name="cancellationToken">cancellation token</param>
-    Task ResponseAsync(string id, string method, string data, CancellationToken cancellationToken = default);
+    Task ResponseAsync(
+        string id,
+        string method,
+        string data,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public partial interface ITigaMessageBus
@@ -62,7 +67,11 @@ public partial interface ITigaMessageBus
     /// <param name="method">method name</param>
     /// <param name="timeout">timeout</param>
     /// <param name="cancellationToken">cancellation token</param>
-    Task InvokeAsync(string method, TimeSpan? timeout = null, CancellationToken cancellationToken = default);
+    Task InvokeAsync(
+        string method,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// invoke a method on the message bus with no parameters and get a typed result
@@ -72,7 +81,11 @@ public partial interface ITigaMessageBus
     /// <param name="timeout">timeout</param>
     /// <param name="cancellationToken">cancellation token</param>
     /// <returns>result of type T</returns>
-    Task<T?> InvokeAsync<T>(string method, TimeSpan? timeout = null, CancellationToken cancellationToken = default);
+    Task<T?> InvokeAsync<T>(
+        string method,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public partial interface ITigaMessageBus
@@ -90,7 +103,10 @@ public partial interface ITigaMessageBus
     /// <param name="messages">message list</param>
     /// <param name="cancellationToken">cancellation token</param>
     /// <returns>task</returns>
-    Task PublishAsync(IReadOnlyList<BinaryData> messages, CancellationToken cancellationToken = default);
+    Task PublishAsync(
+        IReadOnlyList<BinaryData> messages,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// publish a message and wait for a response
@@ -100,8 +116,12 @@ public partial interface ITigaMessageBus
     /// <param name="timeout">timeout</param>
     /// <param name="cancellationToken">cancellation token</param>
     /// <returns>response message</returns>
-    Task<ResponseMessage> PublishAsync(MessageBase message, string messageId, TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default);
+    Task<ResponseMessage> PublishAsync(
+        MessageBase message,
+        string messageId,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// publish an asynchronous event and wait for a return value
@@ -112,8 +132,12 @@ public partial interface ITigaMessageBus
     /// <param name="timeout">timeout</param>
     /// <param name="cancellationToken">cancellation token</param>
     /// <returns>return value</returns>
-    Task<T?> PublishAsync<T>(string method, string data, TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default);
+    Task<T?> PublishAsync<T>(
+        string method,
+        string data,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public partial interface ITigaMessageBus

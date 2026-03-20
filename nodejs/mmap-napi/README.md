@@ -21,7 +21,7 @@ Current package scope:
 
 - Windows only
 - File-backed mapping usage
-- `mappingDirectory` must be passed explicitly by the caller
+- `ipcDirectory` must be passed explicitly by the caller
 
 ## Usage
 
@@ -34,10 +34,10 @@ const {
 } = require('@tiga-ipc/mmap');
 
 async function main() {
-  const mappingDirectory = 'C:\\temp\\tiga-ipc';
+  const ipcDirectory = 'C:\\temp\\tiga-ipc';
   const server = startTigaServer({
-    baseName: 'sample',
-    mappingDirectory,
+    channelName: 'sample',
+    ipcDirectory,
     onInvoke(method, data) {
       if (method === 'echo') {
         return `reply:${data}`;
@@ -54,7 +54,7 @@ async function main() {
       'echo',
       'hello from node',
       {
-        mappingDirectory,
+        ipcDirectory,
         timeoutMs: 3000,
       },
     );
@@ -62,12 +62,12 @@ async function main() {
     console.log(reply);
 
     tigaWrite('sample.events', 'event payload', {
-      mappingDirectory,
+      ipcDirectory,
       mediaType: 'text/plain',
     });
 
     const result = tigaRead('sample.events', {
-      mappingDirectory,
+      ipcDirectory,
       lastId: 0,
     });
 
@@ -89,7 +89,7 @@ main().catch((error) => {
 
 - `name: string`
 - `message: Buffer | string`
-- `options?.mappingDirectory: string`
+- `options?.ipcDirectory: string`
 - `options?.mediaType?: string`
 
 Returns a short write result string from the native addon.
@@ -97,7 +97,7 @@ Returns a short write result string from the native addon.
 ### `tigaRead(name, options?)`
 
 - `name: string`
-- `options?.mappingDirectory: string`
+- `options?.ipcDirectory: string`
 - `options?.lastId?: number`
 
 Returns:
@@ -119,15 +119,15 @@ interface TigaReadResult {
 - `responseName: string`
 - `method: string`
 - `data: string`
-- `options?.mappingDirectory: string`
+- `options?.ipcDirectory: string`
 - `options?.timeoutMs?: number`
 
 Returns the response payload string.
 
 ### `startTigaServer(options)` / `createTigaServer(options)`
 
-- `options.baseName: string`
-- `options.mappingDirectory: string`
+- `options.channelName: string`
+- `options.ipcDirectory: string`
 - `options.discoveryIntervalMs?: number`
 - `options.waitTimeoutMs?: number`
 - `options.onInvoke(method, data, context): unknown | Promise<unknown>`
@@ -139,11 +139,11 @@ Returns a `TigaServer` instance. `startTigaServer(...)` starts it immediately. `
 
 ```ts
 interface TigaServerContext {
-  baseName: string;
+  channelName: string;
   clientId: string;
   requestName: string;
   responseName: string;
-  mappingDirectory: string;
+  ipcDirectory: string;
   requestId: string;
   entryId: number;
   mediaType?: string | null;
@@ -152,7 +152,7 @@ interface TigaServerContext {
 
 The server helper keeps transport concerns inside the package:
 
-- discovers per-client request channels under the configured `mappingDirectory`
+- discovers per-client request channels under the configured `ipcDirectory`
 - registers request listeners using the native notification mechanism
 - decodes invoke payloads and writes response payloads back to the matching response channel
 - surfaces business logic as a single `onInvoke(...)` callback

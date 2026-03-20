@@ -10,10 +10,7 @@ internal static class MessageBusHelper
     private static readonly JsonSerializerSettings SerializerSettings = new()
     {
         FloatParseHandling = FloatParseHandling.Double,
-        Converters = new List<JsonConverter>
-        {
-            new StringEnumConverter()
-        }
+        Converters = new List<JsonConverter> { new StringEnumConverter() },
     };
 
     public static async Task<T> ExecuteWithRetryAsync<T>(
@@ -21,7 +18,8 @@ internal static class MessageBusHelper
         string methodName,
         string? requestId = null,
         int maxRetries = 3,
-        ILogger? logger = null)
+        ILogger? logger = null
+    )
     {
         var retryCount = 0;
         while (true)
@@ -34,21 +32,30 @@ internal static class MessageBusHelper
             {
                 retryCount++;
                 var delay = TimeSpan.FromSeconds(Math.Pow(2, retryCount)); // 指数退避
-                logger?.LogWarning(ex,
+                logger?.LogWarning(
+                    ex,
                     "Retry {RetryCount} for method {Method} with requestId {RequestId}. Waiting {Delay} seconds",
-                    retryCount, methodName, requestId, delay.TotalSeconds);
+                    retryCount,
+                    methodName,
+                    requestId,
+                    delay.TotalSeconds
+                );
                 await Task.Delay(delay).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex,
+                logger?.LogError(
+                    ex,
                     "Error executing method {Method} with requestId {RequestId}",
-                    methodName, requestId);
+                    methodName,
+                    requestId
+                );
                 throw new MessageBusException(
                     $"Error executing method '{methodName}'",
                     methodName,
                     requestId,
-                    ex);
+                    ex
+                );
             }
         }
     }
@@ -65,7 +72,8 @@ internal static class MessageBusHelper
                 $"Failed to deserialize response from method '{methodName}'. Response: {response}",
                 methodName,
                 null,
-                ex);
+                ex
+            );
         }
     }
 
@@ -76,7 +84,7 @@ internal static class MessageBusHelper
             TimeoutException => true,
             SocketException => true,
             HttpRequestException => true,
-            _ => false
+            _ => false,
         };
     }
 }

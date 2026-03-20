@@ -12,7 +12,7 @@ public class ProcessCrashInjectionTests
         var name = "reader_reset_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             WaitTimeout = TimeSpan.FromSeconds(2),
             ReaderGraceTimeout = TimeSpan.FromMilliseconds(200),
             WriterSleepDuration = TimeSpan.FromMilliseconds(5),

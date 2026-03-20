@@ -10,9 +10,8 @@ use crate::tiga_sys::open_file_shared;
 use crate::wyhash_compat::wyhash_hash_compat;
 
 use super::{
-    notification_file_len, notification_path, NotificationSlot,
-    DOTNET_FILETIME_EPOCH_OFFSET_TICKS, EVENT_PREFIX, NOTIFICATION_EVENT_SUFFIX,
-    NOTIFICATION_SLOT_COUNT,
+    notification_file_len, notification_path, NotificationSlot, DOTNET_FILETIME_EPOCH_OFFSET_TICKS,
+    EVENT_PREFIX, NOTIFICATION_EVENT_SUFFIX, NOTIFICATION_SLOT_COUNT,
 };
 
 const LISTENER_READY_EVENT_SUFFIX: &str = "_listener_ready";
@@ -151,13 +150,11 @@ pub fn wait_for_listener(prefix: &Path, timeout: Duration) -> bool {
 
     let _ = sync_listener_ready_event(prefix, false);
 
-    let ready_handle = match create_named_manual_reset_event(
-        &get_listener_ready_event_name(prefix),
-        false,
-    ) {
-        Ok(handle) => handle,
-        Err(_) => return false,
-    };
+    let ready_handle =
+        match create_named_manual_reset_event(&get_listener_ready_event_name(prefix), false) {
+            Ok(handle) => handle,
+            Err(_) => return false,
+        };
 
     let signaled = unsafe {
         use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
@@ -263,8 +260,7 @@ unsafe fn register_notification_slot(
             .compare_exchange(token, slot_token, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
-            slot_owner_start_atomic(slot)
-                .store(process_start_time_utc_ticks, Ordering::Release);
+            slot_owner_start_atomic(slot).store(process_start_time_utc_ticks, Ordering::Release);
             slot_owner_process_id_atomic(slot).store(process_id, Ordering::Release);
             return Ok(slot_index);
         }
@@ -305,12 +301,7 @@ unsafe fn clear_notification_slot(slot: *mut NotificationSlot, token: i64) {
 
     slot_owner_start_atomic(slot).store(0, Ordering::Release);
     slot_owner_process_id_atomic(slot).store(0, Ordering::Release);
-    let _ = slot_token_atomic(slot).compare_exchange(
-        token,
-        0,
-        Ordering::AcqRel,
-        Ordering::Acquire,
-    );
+    let _ = slot_token_atomic(slot).compare_exchange(token, 0, Ordering::AcqRel, Ordering::Acquire);
 }
 
 unsafe fn slots_ptr(map: &mut MmapMut) -> *mut NotificationSlot {
@@ -389,8 +380,7 @@ fn get_listener_ready_event_name(prefix: &Path) -> String {
     format!("{EVENT_PREFIX}{event_scope}{LISTENER_READY_EVENT_SUFFIX}")
 }
 
-fn create_named_auto_reset_event(name: &str) -> io::Result<windows_sys::Win32::Foundation::HANDLE>
-{
+fn create_named_auto_reset_event(name: &str) -> io::Result<windows_sys::Win32::Foundation::HANDLE> {
     create_named_event(name, false, false)
 }
 
@@ -431,7 +421,8 @@ fn sync_listener_ready_event(prefix: &Path, ready: bool) -> io::Result<()> {
     unsafe {
         use windows_sys::Win32::System::Threading::{ResetEvent, SetEvent};
 
-        let handle = create_named_manual_reset_event(&get_listener_ready_event_name(prefix), ready)?;
+        let handle =
+            create_named_manual_reset_event(&get_listener_ready_event_name(prefix), ready)?;
         if ready {
             SetEvent(handle);
         } else {

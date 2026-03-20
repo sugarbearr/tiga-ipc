@@ -14,7 +14,7 @@ public class LogBookSchemaTests
         var name = "schema_v2_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             LogBookSchemaVersion = 2,
             AllowLegacyLogBook = true,
             WaitTimeout = TimeSpan.FromSeconds(2),
@@ -45,17 +45,17 @@ public class LogBookSchemaTests
     public void LogBookSchemaVersion_StrictRejectsLegacy()
     {
         var name = "schema_strict_" + Guid.NewGuid().ToString("N");
-        var mappingDir = Path.Combine(Path.GetTempPath(), "tiga-ipc-schema-" + Guid.NewGuid().ToString("N"));
+        var ipcDirectory = Path.Combine(Path.GetTempPath(), "tiga-ipc-schema-" + Guid.NewGuid().ToString("N"));
 
-        Directory.CreateDirectory(mappingDir);
+        Directory.CreateDirectory(ipcDirectory);
 
         try
         {
             var legacyOptions = new TigaIpcOptions
             {
-                Name = name,
+                ChannelName = name,
                 LogBookSchemaVersion = 1,
-                FileMappingDirectory = mappingDir,
+                IpcDirectory = ipcDirectory,
             };
 
             using (var legacyFile = new WaitFreeMemoryMappedFile(name, MappingType.File, legacyOptions))
@@ -69,10 +69,10 @@ public class LogBookSchemaTests
 
             var strictOptions = new TigaIpcOptions
             {
-                Name = name,
+                ChannelName = name,
                 LogBookSchemaVersion = 2,
                 AllowLegacyLogBook = false,
-                FileMappingDirectory = mappingDir,
+                IpcDirectory = ipcDirectory,
             };
 
             Assert.Throws<InvalidOperationException>(() =>
@@ -83,9 +83,9 @@ public class LogBookSchemaTests
         }
         finally
         {
-            if (Directory.Exists(mappingDir))
+            if (Directory.Exists(ipcDirectory))
             {
-                Directory.Delete(mappingDir, true);
+                Directory.Delete(ipcDirectory, true);
             }
         }
     }

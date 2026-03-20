@@ -122,12 +122,12 @@ TigaIpc/
 
 | 变量名                  | 作用                          | C# 示例                                           | Node 示例                      |
 | -------------------- | --------------------------- | ----------------------------------------------- | ---------------------------- |
-| `TIGA_IPC_DIR`       | 指定文件映射目录；服务端与客户端必须一致        | 示例程序读取后传给 `TigaIpcOptions.FileMappingDirectory` | 示例程序读取后传给 `mappingDirectory` |
+| `TIGA_IPC_DIRECTORY` | 指定 IPC 目录；服务端与客户端必须一致         | 示例程序读取后传给 `TigaIpcOptions.IpcDirectory`         | 示例程序读取后传给 `ipcDirectory`     |
 | `TIGA_IPC_CLIENT_ID` | 指定客户端标识，用于拼接 `req/resp` 通道名 | 默认使用 `进程号-Guid`                                 | 默认使用 `node-<pid>`            |
 
 如果你只是想先把互通跑通，最关键的是：
 
-- 服务端和客户端使用同一个 `TIGA_IPC_DIR`
+- 服务端和客户端使用同一个 `TIGA_IPC_DIRECTORY`
 - 每个客户端使用唯一的 `TIGA_IPC_CLIENT_ID`
 - Node 侧 `index.node` 与当前 Rust 代码是同一轮构建产物
 
@@ -143,7 +143,7 @@ TigaIpc/
 
 这个脚本会：
 
-- 显式创建或使用一个 `MappingDirectory`
+- 显式创建或使用一个 `IpcDirectory`
 - 构建 C# 服务端与 Node addon
 - 启动 C# 服务端
 - 调用 `nodejs/mmap-napi/examples/tiga_invoke.js`
@@ -159,14 +159,15 @@ TigaIpc/
 
 ```powershell
 cd .\csharp\TigaIpc.Server
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 dotnet run -c Release
 ```
 
 预期看到：
 
 - `Channel Name: SampleChannel`
-- `Mapping Directory: ...\tiga-ipc`
+- `IPC Directory: ...\tiga-ipc`
 - `Server ready. Press Ctrl+C to exit.`
 
 ### 2. 构建 Node 本地插件
@@ -182,7 +183,8 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 ```powershell
 cd .\nodejs\mmap-napi
 $env:TIGA_IPC_CLIENT_ID = 'sample-client'
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 node .\examples\tiga_invoke.js
 ```
 
@@ -190,7 +192,8 @@ node .\examples\tiga_invoke.js
 
 ```text
 clientId=sample-client
-mappingDirectory=C:\Users\Administrator\AppData\Local\Temp\tiga-ipc
+channelName=SampleChannel
+ipcDirectory=C:\Users\Administrator\AppData\Local\Temp\tiga-ipc
 request=SampleChannel.req.sample-client
 response=SampleChannel.resp.sample-client
 invoke reply: Echo response: hello from sample-client
@@ -209,14 +212,15 @@ invoke reply: Echo response: hello from sample-client
 
 ```powershell
 cd .\csharp\TigaIpc.Server
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 dotnet run
 ```
 
 当前示例要求显式提供映射目录：
 
 - 通道名：`SampleChannel`
-- 映射目录：通过 `TIGA_IPC_DIR` 或第一个命令行参数传入，然后写入 `TigaIpcOptions.FileMappingDirectory`
+- IPC 目录：通过 `TIGA_IPC_DIRECTORY` 或第一个命令行参数传入，然后写入 `TigaIpcOptions.IpcDirectory`
 
 服务端当前注册的示例方法：
 
@@ -229,7 +233,8 @@ dotnet run
 
 ```powershell
 cd .\csharp\TigaIpc.Client
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 dotnet run
 ```
 
@@ -255,9 +260,9 @@ dotnet run
 
 其中 `options` 当前统一走对象风格：
 
-- `tigaWrite(..., { mappingDirectory, mediaType? })`
-- `tigaRead(..., { mappingDirectory, lastId? })`
-- `tigaInvoke(..., { mappingDirectory, timeoutMs? })`
+- `tigaWrite(..., { ipcDirectory, mediaType? })`
+- `tigaRead(..., { ipcDirectory, lastId? })`
+- `tigaInvoke(..., { ipcDirectory, timeoutMs? })`
 
 类型定义位于：
 
@@ -295,7 +300,8 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 ```powershell
 cd .\nodejs\mmap-napi
 $env:TIGA_IPC_CLIENT_ID = 'sample-client'
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 node .\examples\tiga_invoke.js
 ```
 
@@ -303,7 +309,8 @@ node .\examples\tiga_invoke.js
 
 ```text
 clientId=sample-client
-mappingDirectory=C:\Users\Administrator\AppData\Local\Temp\tiga-ipc
+channelName=SampleChannel
+ipcDirectory=C:\Users\Administrator\AppData\Local\Temp\tiga-ipc
 request=SampleChannel.req.sample-client
 response=SampleChannel.resp.sample-client
 invoke reply: Echo response: hello from sample-client
@@ -317,7 +324,8 @@ invoke reply: Echo response: hello from sample-client
 
 ```powershell
 cd .\csharp\TigaIpc.Server
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 dotnet run -c Release
 ```
 
@@ -333,7 +341,8 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 
 ```powershell
 $env:TIGA_IPC_CLIENT_ID = 'sample-client'
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 node .\examples\tiga_invoke.js
 ```
 
@@ -424,7 +433,7 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 
 优先检查以下三项：
 
-- 两边最终传入的映射目录是否完全一致
+- 两边最终传入的 IPC 目录是否完全一致
 - Node 侧请求通道是否是 `<BaseChannel>.req.<clientId>`
 - 服务端是否已经以 `Release` 或当前本地可运行配置正常启动
 
@@ -432,7 +441,7 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 
 切换目录或反复调试后，最容易出现“程序跑起来了，但其实双方没连到同一套映射文件”的问题。最简单的做法是：
 
-- 显式设置统一的 `TIGA_IPC_DIR`，或在两边传入相同的目录参数
+- 显式设置统一的 `TIGA_IPC_DIRECTORY`，或在两边传入相同的目录参数
 - 调试前确认该目录下生成的是当前这次运行对应的 `<FilePrefix>_*` 文件
 
 ### 4. C# 客户端 / Node 客户端并行调试时互相干扰

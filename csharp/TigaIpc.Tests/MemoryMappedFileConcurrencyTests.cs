@@ -11,7 +11,7 @@ public class MemoryMappedFileConcurrencyTests
         var name = "mmf_test_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             WaitTimeout = TimeSpan.FromSeconds(2),
             MaxFileSize = 128 * 1024,
         };
@@ -44,7 +44,7 @@ public class MemoryMappedFileConcurrencyTests
         var name = "mmf_notify_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             WaitTimeout = TimeSpan.FromSeconds(30),
             MaxFileSize = 128 * 1024,
         };
@@ -77,7 +77,7 @@ public class MemoryMappedFileConcurrencyTests
         var name = "mmf_writer_only_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             WaitTimeout = TimeSpan.FromSeconds(30),
             MaxFileSize = 128 * 1024,
         };
@@ -118,7 +118,7 @@ public class MemoryMappedFileConcurrencyTests
         var name = "mmf_slot_reuse_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             WaitTimeout = TimeSpan.FromSeconds(30),
             MaxFileSize = 128 * 1024,
         };

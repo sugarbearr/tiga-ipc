@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use crate::tiga_notify::ensure_notification_layout;
 use crate::tiga_logbook::{parse_logbook, LogBook};
+use crate::tiga_notify::ensure_notification_layout;
 use crate::tiga_sys::open_file_shared;
 use crate::wyhash_compat::compute_checksum_compat;
 
@@ -86,8 +86,9 @@ impl TigaChannel {
         let state_file = open_file_shared(&state_path(&prefix), true, true, false)
             .map_err(|_| napi_error("failed to open state file"))?;
         // SAFETY: memory map is valid for the lifetime of TigaChannel.
-        let state_map =
-            unsafe { MmapMut::map_mut(&state_file).map_err(|_| napi_error("failed to map state"))? };
+        let state_map = unsafe {
+            MmapMut::map_mut(&state_file).map_err(|_| napi_error("failed to map state"))?
+        };
         if state_map.len() < std::mem::size_of::<State>() {
             return Err(napi_error("invalid state size"));
         }

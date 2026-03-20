@@ -16,7 +16,10 @@ pub struct TigaNotificationListener {
 #[napi]
 impl TigaNotificationListener {
     #[napi]
-    pub fn wait(&self, #[napi(ts_arg_type = "number")] timeout_ms: Option<i64>) -> Result<bool, napi::Error> {
+    pub fn wait(
+        &self,
+        #[napi(ts_arg_type = "number")] timeout_ms: Option<i64>,
+    ) -> Result<bool, napi::Error> {
         let timeout = Duration::from_millis(timeout_ms.unwrap_or(30_000).max(0) as u64);
         let guard = self
             .inner
@@ -55,7 +58,9 @@ pub fn create_tiga_notification_listener_impl(
 ) -> Result<TigaNotificationListener, napi::Error> {
     let prefix = resolve_tiga_prefix(
         &name,
-        options.as_ref().and_then(|value| value.mapping_directory.as_deref()),
+        options
+            .as_ref()
+            .and_then(|value| value.ipc_directory.as_deref()),
     )
     .map_err(|message| napi_error(&message))?;
     let listener = NotificationListener::register(&prefix)

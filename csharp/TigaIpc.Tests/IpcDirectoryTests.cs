@@ -5,19 +5,19 @@ using Xunit;
 
 namespace TigaIpc.Tests;
 
-public class FileMappingDirectoryTests
+public class IpcDirectoryTests
 {
     [Fact]
-    public void FileMappingDirectory_IsUsed()
+    public void IpcDirectory_IsUsed()
     {
         var name = "file_dir_" + Guid.NewGuid().ToString("N");
-        var baseDir = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
+        var ipcDirectory = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
         var capturedPath = string.Empty;
 
         var options = new TigaIpcOptions
         {
-            Name = name,
-            FileMappingDirectory = baseDir,
+            ChannelName = name,
+            IpcDirectory = ipcDirectory,
             FileStreamFactory = (path, capacity) =>
             {
                 capturedPath = path;
@@ -28,24 +28,24 @@ public class FileMappingDirectoryTests
         using var file = new WaitFreeMemoryMappedFile(name, MappingType.File, options);
 
         Assert.False(string.IsNullOrWhiteSpace(capturedPath));
-        var resolvedBase = Path.GetFullPath(baseDir).TrimEnd(Path.DirectorySeparatorChar);
+        var resolvedIpcDirectory = Path.GetFullPath(ipcDirectory).TrimEnd(Path.DirectorySeparatorChar);
         var resolvedPath = Path.GetFullPath(capturedPath);
-        Assert.StartsWith(resolvedBase, resolvedPath, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(resolvedIpcDirectory, resolvedPath, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void FileMappingDirectory_IsRequired_ForFileMappings()
+    public void IpcDirectory_IsRequired_ForFileMappings()
     {
         var name = "file_dir_missing_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
         };
 
         var ex = Assert.Throws<InvalidOperationException>(
             () => new WaitFreeMemoryMappedFile(name, MappingType.File, options));
 
-        Assert.Contains(nameof(TigaIpcOptions.FileMappingDirectory), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(TigaIpcOptions.IpcDirectory), ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -56,6 +56,6 @@ public class FileMappingDirectoryTests
         var ex = Assert.Throws<InvalidOperationException>(
             () => new TigaPerClientServer("sample", MappingType.File, options));
 
-        Assert.Contains(nameof(TigaIpcOptions.FileMappingDirectory), ex.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(TigaIpcOptions.IpcDirectory), ex.Message, StringComparison.Ordinal);
     }
 }

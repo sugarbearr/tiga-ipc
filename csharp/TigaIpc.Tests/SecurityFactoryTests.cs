@@ -16,7 +16,7 @@ public class SecurityFactoryTests
 
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             NamedMemoryMappedFileFactory = (mapName, capacity) =>
             {
                 invoked = true;
@@ -32,13 +32,13 @@ public class SecurityFactoryTests
     public void FileStreamFactory_IsUsed()
     {
         var name = "file_factory_" + Guid.NewGuid().ToString("N");
-        var baseDir = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
+        var ipcDirectory = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
         var invoked = false;
 
         var options = new TigaIpcOptions
         {
-            Name = name,
-            FileMappingDirectory = baseDir,
+            ChannelName = name,
+            IpcDirectory = ipcDirectory,
             FileStreamFactory = (path, capacity) =>
             {
                 invoked = true;
@@ -58,7 +58,7 @@ public class SecurityFactoryTests
 
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             EventWaitHandleFactory = eventName =>
             {
                 invoked = true;
@@ -74,12 +74,38 @@ public class SecurityFactoryTests
     }
 
     [Fact]
+    public void ListenerReadyEvent_IsSignaled_OnSubscription_AndReset_OnDispose()
+    {
+        var name = "listener_ready_" + Guid.NewGuid().ToString("N");
+        var options = new TigaIpcOptions
+        {
+            ChannelName = name,
+        };
+
+        var readyEventName = GetListenerReadyEventName(name);
+        using var readyEvent = new EventWaitHandle(
+            false,
+            EventResetMode.ManualReset,
+            readyEventName
+        );
+
+        var file = new WaitFreeMemoryMappedFile(name, MappingType.Memory, options);
+        Assert.False(readyEvent.WaitOne(0));
+
+        file.FileUpdated += static (_, _) => { };
+        Assert.True(readyEvent.WaitOne(TimeSpan.FromSeconds(2)));
+
+        file.Dispose();
+        Assert.False(readyEvent.WaitOne(0));
+    }
+
+    [Fact]
     public void EventWaitHandleFactory_Failure_DoesNotLeakNotificationSlots()
     {
         var name = "event_factory_fail_" + Guid.NewGuid().ToString("N");
         var badOptions = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             EventWaitHandleFactory = _ => throw new InvalidOperationException("boom"),
         };
 
@@ -92,7 +118,7 @@ public class SecurityFactoryTests
         var invoked = false;
         var goodOptions = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             EventWaitHandleFactory = eventName =>
             {
                 invoked = true;
@@ -113,7 +139,7 @@ public class SecurityFactoryTests
 
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             WaitTimeout = TimeSpan.FromSeconds(30),
             MaxFileSize = 128 * 1024,
         };
@@ -136,15 +162,15 @@ public class SecurityFactoryTests
     public void FileBackedMappings_WithSameNameInDifferentDirectories_UseDistinctNotificationEvents()
     {
         var name = "event_scope_" + Guid.NewGuid().ToString("N");
-        var baseDir1 = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
-        var baseDir2 = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
+        var ipcDirectory1 = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
+        var ipcDirectory2 = Path.Combine(Path.GetTempPath(), "tigaipc_" + Guid.NewGuid().ToString("N"));
         string? eventName1 = null;
         string? eventName2 = null;
 
         var options1 = new TigaIpcOptions
         {
-            Name = name,
-            FileMappingDirectory = baseDir1,
+            ChannelName = name,
+            IpcDirectory = ipcDirectory1,
             FileStreamFactory = (path, _) => new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite),
             EventWaitHandleFactory = eventName =>
             {
@@ -155,8 +181,8 @@ public class SecurityFactoryTests
 
         var options2 = new TigaIpcOptions
         {
-            Name = name,
-            FileMappingDirectory = baseDir2,
+            ChannelName = name,
+            IpcDirectory = ipcDirectory2,
             FileStreamFactory = (path, _) => new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite),
             EventWaitHandleFactory = eventName =>
             {
@@ -214,6 +240,39 @@ public class SecurityFactoryTests
 
         Assert.NotNull(method);
         return (long)method!.Invoke(null, new object[] { processId, processStartTimeUtcTicks })!;
+    }
+
+    private static string GetListenerReadyEventName(string name)
+    {
+        var notificationIdentity =
+            GetPrivateConstant<string>("MemoryPrefix")
+            + name
+            + GetPrivateConstant<string>("NotificationSuffix");
+        var eventScope = CreateNotificationEventScope(MappingType.Memory, notificationIdentity);
+        var method = typeof(WaitFreeMemoryMappedFile).GetMethod(
+            "GetListenerReadyEventName",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: new[] { typeof(string) },
+            modifiers: null);
+
+        Assert.NotNull(method);
+        return (string)method!.Invoke(null, new object[] { eventScope })!;
+    }
+
+    private static string CreateNotificationEventScope(
+        MappingType mappingType,
+        string notificationIdentity)
+    {
+        var method = typeof(WaitFreeMemoryMappedFile).GetMethod(
+            "CreateNotificationEventScope",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: new[] { typeof(MappingType), typeof(string) },
+            modifiers: null);
+
+        Assert.NotNull(method);
+        return (string)method!.Invoke(null, new object[] { mappingType, notificationIdentity })!;
     }
 
     private static T GetPrivateConstant<T>(string fieldName)

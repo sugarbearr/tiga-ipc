@@ -13,6 +13,6 @@ namespace TigaIpc
         /// <summary>
         /// Use file to store data
         /// </summary>
-        File
+        File,
     }
 }

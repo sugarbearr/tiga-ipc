@@ -34,32 +34,32 @@ pub struct TigaEntry {
 
 #[napi(object)]
 pub struct TigaChannelOptions {
-    #[napi(js_name = "mappingDirectory")]
-    pub mapping_directory: Option<String>,
+    #[napi(js_name = "ipcDirectory")]
+    pub ipc_directory: Option<String>,
 }
 
 #[napi(object)]
 pub struct TigaWriteOptions {
     #[napi(js_name = "mediaType")]
     pub media_type: Option<String>,
-    #[napi(js_name = "mappingDirectory")]
-    pub mapping_directory: Option<String>,
+    #[napi(js_name = "ipcDirectory")]
+    pub ipc_directory: Option<String>,
 }
 
 #[napi(object)]
 pub struct TigaReadOptions {
     #[napi(js_name = "lastId")]
     pub last_id: Option<i64>,
-    #[napi(js_name = "mappingDirectory")]
-    pub mapping_directory: Option<String>,
+    #[napi(js_name = "ipcDirectory")]
+    pub ipc_directory: Option<String>,
 }
 
 #[napi(object)]
 pub struct TigaInvokeOptions {
     #[napi(js_name = "timeoutMs")]
     pub timeout_ms: Option<i64>,
-    #[napi(js_name = "mappingDirectory")]
-    pub mapping_directory: Option<String>,
+    #[napi(js_name = "ipcDirectory")]
+    pub ipc_directory: Option<String>,
 }
 
 #[napi(js_name = "tigaWrite")]

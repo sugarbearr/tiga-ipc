@@ -1,12 +1,9 @@
 using System.Buffers;
 using System.Diagnostics;
-using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
 
@@ -16,7 +13,9 @@ namespace TigaIpc.IO;
 /// Memory mapped file implementation inspired by Cloudflare mmap-sync.
 /// Provides wait-free reads with double buffering and reader counters.
 /// </summary>
-public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchronizationMetricsProvider
+public sealed class WaitFreeMemoryMappedFile
+    : ITigaMemoryMappedFile,
+        ISynchronizationMetricsProvider
 {
     private const string FilePrefix = "tiga_";
     private const string MemoryPrefix = "tiga_mapped_file_";
@@ -26,6 +25,7 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     private const string EventPrefix = "tiga_wait_handle_";
     private const string NotificationSuffix = "_notify";
     private const string NotificationEventSuffix = "_slot_";
+    private const string ListenerReadyEventSuffix = "_listener_ready";
     private const int NotificationSlotCount = 128;
 
     private const int DataSizeBits = 39;
@@ -42,7 +42,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     private readonly FileStream? _stateFileStream;
     private readonly FileStream? _notificationFileStream;
     private readonly FileStream?[] _dataFileStreams = new FileStream?[2];
-    private readonly EventWaitHandle?[] _slotSignalHandles = new EventWaitHandle?[NotificationSlotCount];
+    private readonly EventWaitHandle?[] _slotSignalHandles = new EventWaitHandle?[
+        NotificationSlotCount
+    ];
     private readonly object _fileUpdatedLock = new();
     private readonly object _slotSignalHandlesLock = new();
     private readonly ILogger<WaitFreeMemoryMappedFile>? _logger;
@@ -86,7 +88,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         string name,
         MappingType type,
         TigaIpcOptions options,
-        ILogger<WaitFreeMemoryMappedFile>? logger = null)
+        ILogger<WaitFreeMemoryMappedFile>? logger = null
+    )
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -123,11 +126,16 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         _useSingleWriterLock = options.UseSingleWriterLock;
         _currentProcessId = GetCurrentProcessId();
         _currentProcessStartTimeUtcTicks = GetCurrentProcessStartTimeUtcTicks();
-        _notificationSlotToken = CreateNotificationSlotToken(_currentProcessId, _currentProcessStartTimeUtcTicks);
+        _notificationSlotToken = CreateNotificationSlotToken(
+            _currentProcessId,
+            _currentProcessStartTimeUtcTicks
+        );
 
         if (_useSingleWriterLock && _mappingType != MappingType.File)
         {
-            throw new PlatformNotSupportedException("Single-writer lock is supported only for file-backed mappings.");
+            throw new PlatformNotSupportedException(
+                "Single-writer lock is supported only for file-backed mappings."
+            );
         }
 
         var stateInitRequired = false;
@@ -141,11 +149,34 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             var dataPath1 = prefix + DataSuffix1;
             notificationIdentity = NormalizeNotificationIdentity(notificationPath);
 
-            _stateMap = CreateFileMapping(statePath, _stateSize, options, out _stateFileStream, out stateInitRequired);
-            _notificationMap =
-                CreateFileMapping(notificationPath, _notificationSize, options, out _notificationFileStream, out _);
-            _dataMaps[0] = CreateFileMapping(dataPath0, _regionSize, options, out _dataFileStreams[0], out _);
-            _dataMaps[1] = CreateFileMapping(dataPath1, _regionSize, options, out _dataFileStreams[1], out _);
+            _stateMap = CreateFileMapping(
+                statePath,
+                _stateSize,
+                options,
+                out _stateFileStream,
+                out stateInitRequired
+            );
+            _notificationMap = CreateFileMapping(
+                notificationPath,
+                _notificationSize,
+                options,
+                out _notificationFileStream,
+                out _
+            );
+            _dataMaps[0] = CreateFileMapping(
+                dataPath0,
+                _regionSize,
+                options,
+                out _dataFileStreams[0],
+                out _
+            );
+            _dataMaps[1] = CreateFileMapping(
+                dataPath1,
+                _regionSize,
+                options,
+                out _dataFileStreams[1],
+                out _
+            );
 
             if (_useSingleWriterLock && _stateFileStream != null)
             {
@@ -160,7 +191,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                     _stateFileStream.Dispose();
                     _dataFileStreams[0]?.Dispose();
                     _dataFileStreams[1]?.Dispose();
-                    throw new InvalidOperationException("Single-writer lock is already held by another process.");
+                    throw new InvalidOperationException(
+                        "Single-writer lock is already held by another process."
+                    );
                 }
             }
         }
@@ -178,10 +211,20 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             _dataMaps[1] = CreateNamedMapping(dataName1, _regionSize, options);
         }
 
-        _stateAccessor = _stateMap.CreateViewAccessor(0, _stateSize, MemoryMappedFileAccess.ReadWrite);
-        _notificationAccessor = _notificationMap.CreateViewAccessor(0, _notificationSize, MemoryMappedFileAccess.ReadWrite);
-        _dataAccessors[0] = _dataMaps[0].CreateViewAccessor(0, _regionSize, MemoryMappedFileAccess.ReadWrite);
-        _dataAccessors[1] = _dataMaps[1].CreateViewAccessor(0, _regionSize, MemoryMappedFileAccess.ReadWrite);
+        _stateAccessor = _stateMap.CreateViewAccessor(
+            0,
+            _stateSize,
+            MemoryMappedFileAccess.ReadWrite
+        );
+        _notificationAccessor = _notificationMap.CreateViewAccessor(
+            0,
+            _notificationSize,
+            MemoryMappedFileAccess.ReadWrite
+        );
+        _dataAccessors[0] = _dataMaps[0]
+            .CreateViewAccessor(0, _regionSize, MemoryMappedFileAccess.ReadWrite);
+        _dataAccessors[1] = _dataMaps[1]
+            .CreateViewAccessor(0, _regionSize, MemoryMappedFileAccess.ReadWrite);
 
         InitializeState(stateInitRequired);
         InitializeNotificationState();
@@ -213,7 +256,6 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 }
             }
         }
-
         remove
         {
             if (value == null)
@@ -239,7 +281,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         return new SynchronizationMetrics(
             Interlocked.Read(ref _lockTimeouts),
             Interlocked.Read(ref _lockAbandoned),
-            Interlocked.Read(ref _readerResets));
+            Interlocked.Read(ref _readerResets)
+        );
     }
 
     /// <inheritdoc />
@@ -255,7 +298,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
         if (version.Size > int.MaxValue)
         {
-            throw new NotSupportedException("File size exceeds int.MaxValue for stream-based access.");
+            throw new NotSupportedException(
+                "File size exceeds int.MaxValue for stream-based access."
+            );
         }
 
         return (int)version.Size;
@@ -273,7 +318,10 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     /// <summary>
     /// Reads the current data as a zero-copy lease. The lease must be disposed to release reader count.
     /// </summary>
-    public ReadResult ReadLease(bool verifyChecksum = true, CancellationToken cancellationToken = default)
+    public ReadResult ReadLease(
+        bool verifyChecksum = true,
+        CancellationToken cancellationToken = default
+    )
     {
         ThrowIfDisposed();
         var snapshot = EnterRead(cancellationToken);
@@ -308,7 +356,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                     _logger?.LogWarning(
                         "Checksum mismatch detected in wait-free memory mapped file. Expected {Expected} but computed {Actual}",
                         snapshot.Version.Checksum,
-                        truncated);
+                        truncated
+                    );
                 }
             }
 
@@ -331,7 +380,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         {
             if (lease.Size > int.MaxValue)
             {
-                throw new NotSupportedException("File size exceeds int.MaxValue for stream-based access.");
+                throw new NotSupportedException(
+                    "File size exceeds int.MaxValue for stream-based access."
+                );
             }
 
             lease.Stream.CopyTo(readStream);
@@ -350,7 +401,11 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     /// <summary>
     /// Writes a typed payload using a custom serializer.
     /// </summary>
-    public void Write<T>(T value, WaitFreeSerializer<T> serializer, CancellationToken cancellationToken = default)
+    public void Write<T>(
+        T value,
+        WaitFreeSerializer<T> serializer,
+        CancellationToken cancellationToken = default
+    )
     {
         Write(value, serializer, null, _readerGraceTimeout, cancellationToken);
     }
@@ -362,7 +417,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         T value,
         WaitFreeSerializer<T> serializer,
         WaitFreeValidator? validator,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         Write(value, serializer, validator, _readerGraceTimeout, cancellationToken);
     }
@@ -374,7 +430,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         T value,
         WaitFreeSerializer<T> serializer,
         TimeSpan graceDuration,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         Write(value, serializer, null, graceDuration, cancellationToken);
     }
@@ -387,7 +444,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         WaitFreeSerializer<T> serializer,
         WaitFreeValidator? validator,
         TimeSpan graceDuration,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         if (serializer is null)
         {
@@ -414,13 +472,20 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     /// <summary>
     /// Writes raw data bytes into the next available data buffer using a custom grace duration.
     /// </summary>
-    public void WriteRaw(ReadOnlySpan<byte> data, TimeSpan graceDuration, CancellationToken cancellationToken = default)
+    public void WriteRaw(
+        ReadOnlySpan<byte> data,
+        TimeSpan graceDuration,
+        CancellationToken cancellationToken = default
+    )
     {
         ThrowIfDisposed();
 
         if (data.Length > _regionSize)
         {
-            throw new ArgumentOutOfRangeException(nameof(data), "Serialized size exceeds configured MaxFileSize");
+            throw new ArgumentOutOfRangeException(
+                nameof(data),
+                "Serialized size exceeds configured MaxFileSize"
+            );
         }
 
         var newIndex = AcquireNextIndex(graceDuration, cancellationToken, out var reset);
@@ -429,7 +494,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             _logger?.LogWarning(
                 "Reader count reset after waiting {GraceTimeout} for buffer {BufferIndex}",
                 graceDuration,
-                newIndex);
+                newIndex
+            );
         }
 
         WriteRegion(newIndex, data);
@@ -442,7 +508,10 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     /// <summary>
     /// Reads raw data bytes as a zero-copy lease.
     /// </summary>
-    public ReadResult ReadRaw(bool verifyChecksum = true, CancellationToken cancellationToken = default)
+    public ReadResult ReadRaw(
+        bool verifyChecksum = true,
+        CancellationToken cancellationToken = default
+    )
     {
         return ReadLease(verifyChecksum, cancellationToken);
     }
@@ -453,7 +522,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     public T Read<T>(
         WaitFreeDeserializer<T> deserializer,
         bool verifyChecksum = true,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         return Read(deserializer, null, verifyChecksum, cancellationToken);
     }
@@ -465,7 +535,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         WaitFreeDeserializer<T> deserializer,
         WaitFreeValidator? validator,
         bool verifyChecksum = true,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         if (deserializer is null)
         {
@@ -490,22 +561,33 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     /// <summary>
     /// Writes data using a custom grace duration.
     /// </summary>
-    public void Write(MemoryStream data, TimeSpan graceDuration, CancellationToken cancellationToken = default)
+    public void Write(
+        MemoryStream data,
+        TimeSpan graceDuration,
+        CancellationToken cancellationToken = default
+    )
     {
         if (data is null)
         {
             throw new ArgumentNullException(nameof(data));
         }
 
-        ReadWrite((_, writer) =>
-        {
-            data.Seek(0, SeekOrigin.Begin);
-            data.CopyTo(writer);
-        }, graceDuration, cancellationToken);
+        ReadWrite(
+            (_, writer) =>
+            {
+                data.Seek(0, SeekOrigin.Begin);
+                data.CopyTo(writer);
+            },
+            graceDuration,
+            cancellationToken
+        );
     }
 
     /// <inheritdoc />
-    public void ReadWrite(Action<MemoryStream, MemoryStream> updateFunc, CancellationToken cancellationToken = default)
+    public void ReadWrite(
+        Action<MemoryStream, MemoryStream> updateFunc,
+        CancellationToken cancellationToken = default
+    )
     {
         ReadWrite(updateFunc, _readerGraceTimeout, cancellationToken);
     }
@@ -516,7 +598,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     public void ReadWrite(
         Action<MemoryStream, MemoryStream> updateFunc,
         TimeSpan graceDuration,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         if (updateFunc is null)
         {
@@ -526,7 +609,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         ThrowIfDisposed();
 
         using var readStream = MemoryStreamPool.Manager.GetStream(nameof(WaitFreeMemoryMappedFile));
-        using var writeStream = MemoryStreamPool.Manager.GetStream(nameof(WaitFreeMemoryMappedFile));
+        using var writeStream = MemoryStreamPool.Manager.GetStream(
+            nameof(WaitFreeMemoryMappedFile)
+        );
 
         using (var lease = ReadLease(false, cancellationToken))
         {
@@ -534,7 +619,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             {
                 if (lease.Size > int.MaxValue)
                 {
-                    throw new NotSupportedException("File size exceeds int.MaxValue for stream-based access.");
+                    throw new NotSupportedException(
+                        "File size exceeds int.MaxValue for stream-based access."
+                    );
                 }
 
                 lease.Stream.CopyTo(readStream);
@@ -547,13 +634,18 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
         if (writeStream.Length > _regionSize)
         {
-            throw new ArgumentOutOfRangeException(nameof(updateFunc), "Serialized size exceeds configured MaxFileSize");
+            throw new ArgumentOutOfRangeException(
+                nameof(updateFunc),
+                "Serialized size exceeds configured MaxFileSize"
+            );
         }
 
         var size = writeStream.Length;
         if (size > int.MaxValue)
         {
-            throw new NotSupportedException("File size exceeds int.MaxValue for stream-based access.");
+            throw new NotSupportedException(
+                "File size exceeds int.MaxValue for stream-based access."
+            );
         }
 
         var length = (int)size;
@@ -571,7 +663,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 _logger?.LogWarning(
                     "Reader count reset after waiting {GraceTimeout} for buffer {BufferIndex}",
                     graceDuration,
-                    newIndex);
+                    newIndex
+                );
             }
 
             WriteRegion(newIndex, buffer, length);
@@ -630,14 +723,15 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
     private static string GetFilePrefix(string name, TigaIpcOptions options)
     {
-        var baseDirectory = MappingDirectoryHelper.ResolveBaseDirectory(options);
-        return Path.Combine(baseDirectory, FilePrefix + name);
+        var ipcDirectory = IpcDirectoryHelper.ResolveIpcDirectory(options);
+        return Path.Combine(ipcDirectory, FilePrefix + name);
     }
 
     private static MemoryMappedFile CreateNamedMapping(
         string mapName,
         long capacity,
-        TigaIpcOptions options)
+        TigaIpcOptions options
+    )
     {
         if (options?.NamedMemoryMappedFileFactory != null)
         {
@@ -652,11 +746,18 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         long capacity,
         TigaIpcOptions options,
         out FileStream? fileStream,
-        out bool requiresInitialization)
+        out bool requiresInitialization
+    )
     {
-        fileStream = options?.FileStreamFactory != null
-            ? options.FileStreamFactory(filePath, capacity)
-            : new FileStream(filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
+        fileStream =
+            options?.FileStreamFactory != null
+                ? options.FileStreamFactory(filePath, capacity)
+                : new FileStream(
+                    filePath,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.ReadWrite
+                );
 
         requiresInitialization = false;
         if (fileStream.Length != capacity)
@@ -671,10 +772,15 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             capacity,
             MemoryMappedFileAccess.ReadWrite,
             HandleInheritability.None,
-            false);
+            false
+        );
     }
 
-    private static EventWaitHandle CreateEventWaitHandle(string eventScope, int slotIndex, TigaIpcOptions options)
+    private static EventWaitHandle CreateEventWaitHandle(
+        string eventScope,
+        int slotIndex,
+        TigaIpcOptions options
+    )
     {
         if (string.IsNullOrWhiteSpace(eventScope))
         {
@@ -737,15 +843,20 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             slotIndex = RegisterNotificationSlot();
             fileWaitHandle = CreateEventWaitHandle(_notificationEventScope, slotIndex, _options);
             disposeWaitHandle = new EventWaitHandle(false, EventResetMode.ManualReset);
-            watcherReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            watcherReady = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
 
             _fileWaitHandle = fileWaitHandle;
             _notificationSlotIndex = slotIndex;
             _disposeWaitHandle = disposeWaitHandle;
 
-            fileWatcherTask = Task.Run(() => FileWatcher(watcherReady, disposeWaitHandle, fileWaitHandle));
+            fileWatcherTask = Task.Run(() =>
+                FileWatcher(watcherReady, disposeWaitHandle, fileWaitHandle)
+            );
             _fileWatcherTask = fileWatcherTask;
             watcherReady.Task.GetAwaiter().GetResult();
+            SyncListenerReadyEvent(true);
             _notificationListenerInitialized = true;
         }
         catch
@@ -774,6 +885,15 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             if (slotIndex >= 0)
             {
                 UnregisterNotificationSlot(slotIndex);
+            }
+
+            try
+            {
+                SyncListenerReadyEvent(HasLiveListener());
+            }
+            catch
+            {
+                // Preserve the original initialization failure.
             }
 
             fileWaitHandle?.Dispose();
@@ -831,7 +951,10 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 {
                     if (Interlocked.CompareExchange(ref slot.Token, _notificationSlotToken, 0) == 0)
                     {
-                        Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, _currentProcessStartTimeUtcTicks);
+                        Volatile.Write(
+                            ref slot.OwnerProcessStartTimeUtcTicks,
+                            _currentProcessStartTimeUtcTicks
+                        );
                         Volatile.Write(ref slot.OwnerProcessId, _currentProcessId);
                         return i;
                     }
@@ -847,9 +970,15 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                         continue;
                     }
 
-                    if (Interlocked.CompareExchange(ref slot.Token, _notificationSlotToken, token) == token)
+                    if (
+                        Interlocked.CompareExchange(ref slot.Token, _notificationSlotToken, token)
+                        == token
+                    )
                     {
-                        Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, _currentProcessStartTimeUtcTicks);
+                        Volatile.Write(
+                            ref slot.OwnerProcessStartTimeUtcTicks,
+                            _currentProcessStartTimeUtcTicks
+                        );
                         Volatile.Write(ref slot.OwnerProcessId, _currentProcessId);
                         return i;
                     }
@@ -857,15 +986,23 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                     continue;
                 }
 
-                var ownerProcessStartTimeUtcTicks = Volatile.Read(ref slot.OwnerProcessStartTimeUtcTicks);
+                var ownerProcessStartTimeUtcTicks = Volatile.Read(
+                    ref slot.OwnerProcessStartTimeUtcTicks
+                );
                 if (IsSameLiveProcess(ownerProcessId, ownerProcessStartTimeUtcTicks))
                 {
                     continue;
                 }
 
-                if (Interlocked.CompareExchange(ref slot.Token, _notificationSlotToken, token) == token)
+                if (
+                    Interlocked.CompareExchange(ref slot.Token, _notificationSlotToken, token)
+                    == token
+                )
                 {
-                    Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, _currentProcessStartTimeUtcTicks);
+                    Volatile.Write(
+                        ref slot.OwnerProcessStartTimeUtcTicks,
+                        _currentProcessStartTimeUtcTicks
+                    );
                     Volatile.Write(ref slot.OwnerProcessId, _currentProcessId);
                     return i;
                 }
@@ -880,7 +1017,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
 
         throw new InvalidOperationException(
-            $"No notification slots are available for '{Name}'. Increase slot capacity or dispose unused readers.");
+            $"No notification slots are available for '{Name}'. Increase slot capacity or dispose unused readers."
+        );
     }
 
     private void UnregisterNotificationSlot()
@@ -951,7 +1089,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                     continue;
                 }
 
-                var ownerProcessStartTimeUtcTicks = Volatile.Read(ref slot.OwnerProcessStartTimeUtcTicks);
+                var ownerProcessStartTimeUtcTicks = Volatile.Read(
+                    ref slot.OwnerProcessStartTimeUtcTicks
+                );
                 if (!IsSameLiveProcess(ownerProcessId, ownerProcessStartTimeUtcTicks))
                 {
                     Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, 0);
@@ -972,6 +1112,61 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
     }
 
+    private unsafe bool HasLiveListener()
+    {
+        byte* pointer = null;
+        var handle = _notificationAccessor.SafeMemoryMappedViewHandle;
+        try
+        {
+            handle.AcquirePointer(ref pointer);
+            var slots = (NotificationSlot*)pointer;
+            for (var i = 0; i < NotificationSlotCount; i++)
+            {
+                ref var slot = ref slots[i];
+                var token = Volatile.Read(ref slot.Token);
+                if (token == 0)
+                {
+                    continue;
+                }
+
+                var ownerProcessId = Volatile.Read(ref slot.OwnerProcessId);
+                if (ownerProcessId == 0)
+                {
+                    if (IsTokenOwnedByLiveProcess(token))
+                    {
+                        return true;
+                    }
+
+                    Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, 0);
+                    Volatile.Write(ref slot.OwnerProcessId, 0);
+                    Interlocked.CompareExchange(ref slot.Token, 0, token);
+                    continue;
+                }
+
+                var ownerProcessStartTimeUtcTicks = Volatile.Read(
+                    ref slot.OwnerProcessStartTimeUtcTicks
+                );
+                if (IsSameLiveProcess(ownerProcessId, ownerProcessStartTimeUtcTicks))
+                {
+                    return true;
+                }
+
+                Volatile.Write(ref slot.OwnerProcessStartTimeUtcTicks, 0);
+                Volatile.Write(ref slot.OwnerProcessId, 0);
+                Interlocked.CompareExchange(ref slot.Token, 0, token);
+            }
+
+            return false;
+        }
+        finally
+        {
+            if (pointer != null)
+            {
+                handle.ReleasePointer();
+            }
+        }
+    }
+
     private EventWaitHandle GetSlotSignalHandle(int slotIndex)
     {
         lock (_slotSignalHandlesLock)
@@ -981,7 +1176,11 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 return _fileWaitHandle;
             }
 
-            _slotSignalHandles[slotIndex] ??= CreateEventWaitHandle(_notificationEventScope, slotIndex, _options);
+            _slotSignalHandles[slotIndex] ??= CreateEventWaitHandle(
+                _notificationEventScope,
+                slotIndex,
+                _options
+            );
             return _slotSignalHandles[slotIndex]!;
         }
     }
@@ -1012,6 +1211,15 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
 
         UnregisterNotificationSlot();
+        try
+        {
+            SyncListenerReadyEvent(HasLiveListener());
+        }
+        catch
+        {
+            // Dispose should remain best-effort even if ready-event sync fails.
+        }
+
         DisposeSlotSignalHandles();
         _fileWaitHandle?.Dispose();
         _disposeWaitHandle?.Dispose();
@@ -1026,7 +1234,15 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         return $"{EventPrefix}{eventScope}{NotificationEventSuffix}{slotIndex}";
     }
 
-    private static string CreateNotificationEventScope(MappingType mappingType, string notificationIdentity)
+    private static string GetListenerReadyEventName(string eventScope)
+    {
+        return $"{EventPrefix}{eventScope}{ListenerReadyEventSuffix}";
+    }
+
+    private static string CreateNotificationEventScope(
+        MappingType mappingType,
+        string notificationIdentity
+    )
     {
         var bytes = Encoding.UTF8.GetBytes(notificationIdentity);
         var hash = WyHash.Hash(bytes);
@@ -1039,6 +1255,24 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? normalized.ToUpperInvariant()
             : normalized;
+    }
+
+    private void SyncListenerReadyEvent(bool ready)
+    {
+        using var handle = new EventWaitHandle(
+            ready,
+            EventResetMode.ManualReset,
+            GetListenerReadyEventName(_notificationEventScope)
+        );
+
+        if (ready)
+        {
+            handle.Set();
+        }
+        else
+        {
+            handle.Reset();
+        }
     }
 
     private static bool IsSameLiveProcess(int processId, long expectedStartTimeUtcTicks)
@@ -1090,7 +1324,13 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
     private static bool IsTokenOwnedByLiveProcess(long token)
     {
-        if (!TryGetNotificationSlotTokenIdentity(token, out var processId, out var processStartMarker))
+        if (
+            !TryGetNotificationSlotTokenIdentity(
+                token,
+                out var processId,
+                out var processStartMarker
+            )
+        )
         {
             return false;
         }
@@ -1113,7 +1353,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 return true;
             }
 
-            return CreateNotificationProcessStartMarker(process.StartTime.ToUniversalTime().Ticks) == processStartMarker;
+            return CreateNotificationProcessStartMarker(process.StartTime.ToUniversalTime().Ticks)
+                == processStartMarker;
         }
         catch
         {
@@ -1121,7 +1362,11 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
     }
 
-    private static bool TryGetNotificationSlotTokenIdentity(long token, out int processId, out uint processStartMarker)
+    private static bool TryGetNotificationSlotTokenIdentity(
+        long token,
+        out int processId,
+        out uint processStartMarker
+    )
     {
         if (token == 0)
         {
@@ -1202,14 +1447,17 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                     }
 
                     var activeIndex = version.Index;
-                    ref var readerCount =
-                        ref activeIndex == 0 ? ref state->ReaderCount0 : ref state->ReaderCount1;
+                    ref var readerCount = ref activeIndex == 0
+                        ? ref state->ReaderCount0
+                        : ref state->ReaderCount1;
                     Interlocked.Increment(ref readerCount);
 
                     var confirmValue = Volatile.Read(ref state->Version);
                     if (confirmValue == versionValue)
                     {
-                        var switched = Interlocked.Exchange(ref _lastReadVersion, versionValue) != versionValue;
+                        var switched =
+                            Interlocked.Exchange(ref _lastReadVersion, versionValue)
+                            != versionValue;
                         return new ReadSnapshot(version, activeIndex, switched);
                     }
 
@@ -1242,8 +1490,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             {
                 handle.AcquirePointer(ref pointer);
                 var state = (StateHeader*)pointer;
-                ref var readerCount =
-                    ref bufferIndex == 0 ? ref state->ReaderCount0 : ref state->ReaderCount1;
+                ref var readerCount = ref bufferIndex == 0
+                    ? ref state->ReaderCount0
+                    : ref state->ReaderCount1;
                 DecrementReaderCount(ref readerCount);
             }
             finally
@@ -1256,7 +1505,11 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
         }
     }
 
-    private int AcquireNextIndex(TimeSpan graceDuration, CancellationToken cancellationToken, out bool reset)
+    private int AcquireNextIndex(
+        TimeSpan graceDuration,
+        CancellationToken cancellationToken,
+        out bool reset
+    )
     {
         reset = false;
         unsafe
@@ -1272,12 +1525,14 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 var version = new WaitFreeVersion(versionValue);
                 var nextIndex = version.IsInitialized ? (version.Index + 1) % 2 : 0;
 
-                ref var readerCount =
-                    ref nextIndex == 0 ? ref state->ReaderCount0 : ref state->ReaderCount1;
+                ref var readerCount = ref nextIndex == 0
+                    ? ref state->ReaderCount0
+                    : ref state->ReaderCount1;
 
-                var graceTicks = graceDuration <= TimeSpan.Zero
-                    ? 0
-                    : (long)(graceDuration.TotalSeconds * Stopwatch.Frequency);
+                var graceTicks =
+                    graceDuration <= TimeSpan.Zero
+                        ? 0
+                        : (long)(graceDuration.TotalSeconds * Stopwatch.Frequency);
                 var start = Stopwatch.GetTimestamp();
                 var spin = new SpinWait();
 
@@ -1394,7 +1649,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
         if (length > int.MaxValue)
         {
-            throw new NotSupportedException("Custom checksum provider does not support payloads larger than 2GB.");
+            throw new NotSupportedException(
+                "Custom checksum provider does not support payloads larger than 2GB."
+            );
         }
 
         var hashSpan = _checksumProvider(new ReadOnlySpan<byte>(data, (int)length));
@@ -1404,15 +1661,12 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
     private async Task FileWatcher(
         TaskCompletionSource<bool> watcherReady,
         EventWaitHandle disposeWaitHandle,
-        EventWaitHandle fileWaitHandle)
+        EventWaitHandle fileWaitHandle
+    )
     {
         watcherReady.TrySetResult(true);
 
-        var waitHandles = new[]
-        {
-            disposeWaitHandle,
-            fileWaitHandle,
-        };
+        var waitHandles = new[] { disposeWaitHandle, fileWaitHandle };
 
         while (!_disposed)
         {
@@ -1452,7 +1706,8 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             WaitFreeMemoryMappedFile owner,
             SafeMemoryMappedViewHandle handle,
             byte* pointer,
-            ReadSnapshot snapshot)
+            ReadSnapshot snapshot
+        )
         {
             _owner = owner;
             _handle = handle;
@@ -1495,7 +1750,9 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
             if (_length > int.MaxValue)
             {
-                throw new NotSupportedException("Payload size exceeds int.MaxValue for span access.");
+                throw new NotSupportedException(
+                    "Payload size exceeds int.MaxValue for span access."
+                );
             }
 
             return new ReadOnlySpan<byte>(_pointer.ToPointer(), (int)_length);
@@ -1521,7 +1778,11 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
             }
         }
 
-        internal static ReadResult CreateEmpty(WaitFreeMemoryMappedFile owner, WaitFreeVersion version, bool switched)
+        internal static ReadResult CreateEmpty(
+            WaitFreeMemoryMappedFile owner,
+            WaitFreeVersion version,
+            bool switched
+        )
         {
             return new ReadResult(owner, version, switched);
         }
@@ -1546,7 +1807,11 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
 
     internal readonly struct ReadSnapshot
     {
-        public static readonly ReadSnapshot Empty = new ReadSnapshot(new WaitFreeVersion(0), -1, false);
+        public static readonly ReadSnapshot Empty = new ReadSnapshot(
+            new WaitFreeVersion(0),
+            -1,
+            false
+        );
 
         public ReadSnapshot(WaitFreeVersion version, int activeIndex, bool switched)
         {
@@ -1594,9 +1859,10 @@ public sealed class WaitFreeMemoryMappedFile : ITigaMemoryMappedFile, ISynchroni
                 throw new ArgumentOutOfRangeException(nameof(size));
             }
 
-            var value = ((long)index & 1)
-                        | (((long)size & MaxDataSize) << 1)
-                        | (((long)checksum & ChecksumMask) << (DataSizeBits + 1));
+            var value =
+                ((long)index & 1)
+                | (((long)size & MaxDataSize) << 1)
+                | (((long)checksum & ChecksumMask) << (DataSizeBits + 1));
             return new WaitFreeVersion(value);
         }
     }

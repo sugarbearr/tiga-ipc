@@ -37,6 +37,9 @@ namespace TigaIpc.IO
         /// <summary>
         /// Reads and then replaces the content of the memory mapped file with a write lock in place.
         /// </summary>
-        void ReadWrite(Action<MemoryStream, MemoryStream> updateFunc, CancellationToken cancellationToken = default);
+        void ReadWrite(
+            Action<MemoryStream, MemoryStream> updateFunc,
+            CancellationToken cancellationToken = default
+        );
     }
 }

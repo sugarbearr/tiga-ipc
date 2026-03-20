@@ -1,8 +1,8 @@
-﻿using MessagePack;
+﻿using System.Diagnostics;
+using System.Runtime.Versioning;
+using MessagePack;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
-using System.Diagnostics;
-using System.Runtime.Versioning;
 using TigaIpc;
 using TigaIpc.Core;
 using TigaIpc.Messaging;
@@ -12,17 +12,20 @@ namespace TigaIpc.Client;
 [MessagePackObject]
 public class ProfileRequest
 {
-    [Key(0)] public string? Name { get; set; }
+    [Key(0)]
+    public string? Name { get; set; }
 
-    [Key(1)] public string? RequestUrl { get; set; }
+    [Key(1)]
+    public string? RequestUrl { get; set; }
 
-    [Key(2)] public int? Timeout { get; set; }
+    [Key(2)]
+    public int? Timeout { get; set; }
 }
 
 [SupportedOSPlatform("windows")]
 class Program
 {
-    private const string ChannelName = "SampleChannel";
+    private const string DefaultChannelName = "SampleChannel";
     private const string EchoMethodName = "echo";
     private const string FetchProfileMethodName = "fetchProfile";
     private const string BackgroundJobMethodName = "backgroundJob";
@@ -30,34 +33,38 @@ class Program
 
     static async Task Main(string[] args)
     {
-        var mappingDir = ResolveMappingDirectory(args);
-        if (mappingDir == null)
+        var channelName = ResolveChannelName();
+        var ipcDirectory = ResolveIpcDirectory(args);
+        if (ipcDirectory == null)
         {
             return;
         }
 
-        var clientId = Environment.GetEnvironmentVariable("TIGA_IPC_CLIENT_ID") ??
-                       $"{Environment.ProcessId}-{Guid.NewGuid():N}";
+        var clientId =
+            Environment.GetEnvironmentVariable("TIGA_IPC_CLIENT_ID")
+            ?? $"{Environment.ProcessId}-{Guid.NewGuid():N}";
         var ipcOptions = new TigaIpcOptions
         {
-            Name = ChannelName,
-            FileMappingDirectory = mappingDir,
+            ChannelName = channelName,
+            IpcDirectory = ipcDirectory,
         }.WithRobustConfiguration();
 
-        var requestName = PerClientChannelNames.GetRequestChannelName(ChannelName, clientId);
-        var responseName = PerClientChannelNames.GetResponseChannelName(ChannelName, clientId);
+        var requestName = PerClientChannelNames.GetRequestChannelName(channelName, clientId);
+        var responseName = PerClientChannelNames.GetResponseChannelName(channelName, clientId);
 
         Console.WriteLine($"Initializing TigaIpc Client...");
+        Console.WriteLine($"  Channel Name: {channelName}");
         Console.WriteLine($"  Client ID: {clientId}");
         Console.WriteLine($"  Request Channel: {requestName}");
         Console.WriteLine($"  Response Channel: {responseName}");
-        Console.WriteLine($"  Mapping Dir: {mappingDir}");
+        Console.WriteLine($"  IPC Directory: {ipcDirectory}");
 
         await using var messageBus = new TigaMessageBus(
             responseName,
             requestName,
             MappingType.File,
-            Options.Create(ipcOptions));
+            Options.Create(ipcOptions)
+        );
 
         Console.WriteLine("Client ready.");
         PrintHelp();
@@ -69,7 +76,7 @@ class Program
             cts.Cancel();
         };
 
-        // Start a background listener for server messages if needed, 
+        // Start a background listener for server messages if needed,
         // but TigaMessageBus handles subscriptions via callbacks usually.
         // If we want to receive broadcasts from server, we should subscribe.
         // The server example sends "Server heartbeat...", let's subscribe to it.
@@ -94,7 +101,8 @@ class Program
                 Console.Write("> ");
                 var line = await Task.Run(() => Console.ReadLine(), cts.Token);
 
-                if (string.IsNullOrWhiteSpace(line)) continue;
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
 
                 var parts = line.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
                 var command = parts[0].ToLowerInvariant();
@@ -109,7 +117,11 @@ class Program
                                 var payload = argument ?? "hello";
                                 Console.WriteLine($"Sending invoke: {payload}...");
                                 var sw = Stopwatch.StartNew();
-                                var response = await messageBus.InvokeAsync(EchoMethodName, payload, cancellationToken: cts.Token);
+                                var response = await messageBus.InvokeAsync(
+                                    EchoMethodName,
+                                    payload,
+                                    cancellationToken: cts.Token
+                                );
                                 sw.Stop();
                                 Console.WriteLine($"Response ({sw.ElapsedMilliseconds}ms): {response}");
                                 break;
@@ -129,16 +141,22 @@ class Program
                                 var response = await messageBus.InvokeAsync<OperationResult>(
                                     FetchProfileMethodName,
                                     profileRequest,
-                                    cancellationToken: cts.Token);
+                                    cancellationToken: cts.Token
+                                );
                                 sw.Stop();
-                                Console.WriteLine($"Response ({sw.ElapsedMilliseconds}ms): {response?.Result ?? "<null>"}");
+                                Console.WriteLine(
+                                    $"Response ({sw.ElapsedMilliseconds}ms): {response?.Result ?? "<null>"}"
+                                );
                                 break;
                             }
                         case "publish":
                             {
                                 var message = argument ?? "ping";
                                 Console.WriteLine($"Publishing: {message}...");
-                                await messageBus.PublishAsync($"Client message: {message}", cancellationToken: cts.Token);
+                                await messageBus.PublishAsync(
+                                    $"Client message: {message}",
+                                    cancellationToken: cts.Token
+                                );
                                 Console.WriteLine("Message published.");
                                 break;
                             }
@@ -146,16 +164,24 @@ class Program
                             {
                                 Console.WriteLine($"Calling {BackgroundJobMethodName}...");
                                 var sw = Stopwatch.StartNew();
-                                var response = await messageBus.InvokeAsync<OperationResult>(BackgroundJobMethodName, cancellationToken: cts.Token);
+                                var response = await messageBus.InvokeAsync<OperationResult>(
+                                    BackgroundJobMethodName,
+                                    cancellationToken: cts.Token
+                                );
                                 sw.Stop();
-                                Console.WriteLine($"Response ({sw.ElapsedMilliseconds}ms): {response?.Result}");
+                                Console.WriteLine(
+                                    $"Response ({sw.ElapsedMilliseconds}ms): {response?.Result}"
+                                );
                                 break;
                             }
                         case "void": // Test the async notification example.
                             {
                                 Console.WriteLine($"Calling {NotifyOnlyMethodName}...");
                                 var sw = Stopwatch.StartNew();
-                                await messageBus.InvokeAsync(NotifyOnlyMethodName, cancellationToken: cts.Token);
+                                await messageBus.InvokeAsync(
+                                    NotifyOnlyMethodName,
+                                    cancellationToken: cts.Token
+                                );
                                 sw.Stop();
                                 Console.WriteLine($"Completed ({sw.ElapsedMilliseconds}ms).");
                                 break;
@@ -163,18 +189,27 @@ class Program
                         case "stress":
                             {
                                 int count = 100;
-                                if (int.TryParse(argument, out int n)) count = n;
+                                if (int.TryParse(argument, out int n))
+                                    count = n;
                                 Console.WriteLine($"Starting stress test with {count} requests...");
                                 var sw = Stopwatch.StartNew();
                                 for (int i = 0; i < count; i++)
                                 {
-                                    if (cts.IsCancellationRequested) break;
-                                    await messageBus.InvokeAsync(EchoMethodName, $"stress-{i}", cancellationToken: cts.Token);
-                                    if (i % 10 == 0) Console.Write(".");
+                                    if (cts.IsCancellationRequested)
+                                        break;
+                                    await messageBus.InvokeAsync(
+                                        EchoMethodName,
+                                        $"stress-{i}",
+                                        cancellationToken: cts.Token
+                                    );
+                                    if (i % 10 == 0)
+                                        Console.Write(".");
                                 }
                                 sw.Stop();
                                 Console.WriteLine();
-                                Console.WriteLine($"Stress test completed in {sw.ElapsedMilliseconds}ms. Avg: {sw.ElapsedMilliseconds / (double)count}ms/req");
+                                Console.WriteLine(
+                                    $"Stress test completed in {sw.ElapsedMilliseconds}ms. Avg: {sw.ElapsedMilliseconds / (double)count}ms/req"
+                                );
                                 break;
                             }
                         case "cls":
@@ -213,31 +248,42 @@ class Program
         Console.WriteLine("Bye!");
     }
 
-    private static string? ResolveMappingDirectory(string[] args)
+    private static string? ResolveIpcDirectory(string[] args)
     {
         if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
         {
             return args[0];
         }
 
-        var mappingDir = Environment.GetEnvironmentVariable("TIGA_IPC_DIR");
-        if (!string.IsNullOrWhiteSpace(mappingDir))
+        var ipcDirectory = Environment.GetEnvironmentVariable("TIGA_IPC_DIRECTORY");
+        if (!string.IsNullOrWhiteSpace(ipcDirectory))
         {
-            return mappingDir;
+            return ipcDirectory;
         }
 
         Console.Error.WriteLine(
-            "Mapping directory is required. Pass it as the first argument or set TIGA_IPC_DIR.");
+            "IPC directory is required. Pass it as the first argument or set TIGA_IPC_DIRECTORY."
+        );
         return null;
+    }
+
+    private static string ResolveChannelName()
+    {
+        var channelName = Environment.GetEnvironmentVariable("TIGA_CHANNEL_NAME");
+        return string.IsNullOrWhiteSpace(channelName) ? DefaultChannelName : channelName.Trim();
     }
 
     private static void PrintHelp()
     {
         Console.WriteLine("Available commands:");
         Console.WriteLine($"  invoke <text>   - Call '{EchoMethodName}' with string payload");
-        Console.WriteLine($"  profile <name>  - Call '{FetchProfileMethodName}' with structured data");
+        Console.WriteLine(
+            $"  profile <name>  - Call '{FetchProfileMethodName}' with structured data"
+        );
         Console.WriteLine("  publish <text>  - Send a fire-and-forget message");
-        Console.WriteLine($"  bg              - Call '{BackgroundJobMethodName}' (simulates background work)");
+        Console.WriteLine(
+            $"  bg              - Call '{BackgroundJobMethodName}' (simulates background work)"
+        );
         Console.WriteLine($"  void            - Call '{NotifyOnlyMethodName}' (returns void)");
         Console.WriteLine("  stress <count>  - Run <count> invocations sequentially");
         Console.WriteLine("  cls             - Clear screen");

@@ -42,7 +42,8 @@ public static class TigaIpcOptionsExtensions
     /// <summary>
     /// 检查参数是否为null，兼容不同的.NET版本
     /// </summary>
-    public static void ThrowIfParameterNull<T>(T? parameter, string paramName) where T : class
+    public static void ThrowIfParameterNull<T>(T? parameter, string paramName)
+        where T : class
     {
 #if NET7_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(parameter, paramName);
@@ -60,8 +61,10 @@ public static class TigaIpcOptionsExtensions
     /// <param name="services">The service collection</param>
     /// <param name="optionsAction">Action to configure options</param>
     /// <returns>The service collection</returns>
-    public static IServiceCollection ConfigureTigaIpc(this IServiceCollection services,
-        Action<TigaIpcOptions> optionsAction)
+    public static IServiceCollection ConfigureTigaIpc(
+        this IServiceCollection services,
+        Action<TigaIpcOptions> optionsAction
+    )
     {
         return services.Configure<TigaIpcOptions>(optionsAction);
     }
@@ -72,8 +75,11 @@ public static class TigaIpcOptionsExtensions
     /// <param name="waitTimeoutSeconds">Wait timeout in seconds (default 30)</param>
     /// <param name="invokeTimeoutSeconds">Invoke timeout in seconds (default 60)</param>
     /// <returns>A configured TigaIpcOptions instance</returns>
-    public static TigaIpcOptions WithIncreasedTimeouts(this TigaIpcOptions options, int waitTimeoutSeconds = 30,
-        int invokeTimeoutSeconds = 60)
+    public static TigaIpcOptions WithIncreasedTimeouts(
+        this TigaIpcOptions options,
+        int waitTimeoutSeconds = 30,
+        int invokeTimeoutSeconds = 60
+    )
     {
         options.WaitTimeout = TimeSpan.FromSeconds(waitTimeoutSeconds);
         options.ReaderGraceTimeout = TimeSpan.FromSeconds(waitTimeoutSeconds);
@@ -93,7 +99,8 @@ public static class TigaIpcOptionsExtensions
         this TigaIpcOptions options,
         int waitTimeoutSeconds = 30,
         int invokeTimeoutSeconds = 60,
-        int maxRetries = 5)
+        int maxRetries = 5
+    )
     {
         // 增加超时时间
         options.WaitTimeout = TimeSpan.FromSeconds(waitTimeoutSeconds);

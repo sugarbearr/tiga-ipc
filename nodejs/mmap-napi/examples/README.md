@@ -11,7 +11,8 @@ From the monorepo root:
 dotnet build .\csharp\TigaIpc.Server\TigaIpc.Server.csproj -c Release
 
 # run server
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 dotnet run --project .\csharp\TigaIpc.Server\TigaIpc.Server.csproj -c Release
 ```
 
@@ -24,7 +25,8 @@ From `.\nodejs\mmap-napi`:
 npm run build
 
 # run the Node server helper
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 node .\examples\tiga_server.js
 ```
 
@@ -37,21 +39,23 @@ From `.\nodejs\mmap-napi`:
 npm run build
 
 # run example
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 node .\examples\tiga_invoke.js
 ```
 
 ## 4) Run the Node response listener (optional)
 
 ```powershell
-$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+$env:TIGA_CHANNEL_NAME = 'SampleChannel'
 node .\examples\tiga_read.js
 ```
 
 Notes:
-- The default base channel name is `SampleChannel` (matches the C# samples).
+- The default channel name is `SampleChannel` (matches the C# samples).
 - The invoke example calls the `echo` handler on the sample server.
 - `TIGA_IPC_CLIENT_ID` can be set to a fixed client id for testing.
 - The library no longer uses a hidden default local cache directory.
-- The examples read `TIGA_IPC_DIR` and pass it into the addon as `mappingDirectory`.
+- The examples read `TIGA_IPC_DIRECTORY` and pass it into the addon as `ipcDirectory`.
 - `tigaInvoke(...)` is synchronous, so do not run the server helper and invoke caller on the same Node event loop when you want to test request/response behavior.

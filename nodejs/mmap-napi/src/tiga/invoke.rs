@@ -20,11 +20,16 @@ pub fn tiga_invoke_impl(
     data: String,
     options: Option<TigaInvokeOptions>,
 ) -> Result<String, napi::Error> {
-    let timeout_ms = options.as_ref().and_then(|value| value.timeout_ms).unwrap_or(30_000) as u64;
-    let mapping_directory = options.as_ref().and_then(|value| value.mapping_directory.as_deref());
-    let request_prefix = resolve_tiga_prefix(&request_name, mapping_directory)
+    let timeout_ms = options
+        .as_ref()
+        .and_then(|value| value.timeout_ms)
+        .unwrap_or(30_000) as u64;
+    let ipc_directory = options
+        .as_ref()
+        .and_then(|value| value.ipc_directory.as_deref());
+    let request_prefix = resolve_tiga_prefix(&request_name, ipc_directory)
         .map_err(|message| napi_error(&message))?;
-    let response_prefix = resolve_tiga_prefix(&response_name, mapping_directory)
+    let response_prefix = resolve_tiga_prefix(&response_name, ipc_directory)
         .map_err(|message| napi_error(&message))?;
     let wait_budget = Duration::from_millis(timeout_ms);
 
@@ -73,11 +78,9 @@ pub fn tiga_invoke_impl(
             return Err(napi_error("invoke timeout"));
         }
 
-        if let Some(response) = read_matching_response(
-            &mut response_channel,
-            &request_id,
-            &mut last_seen,
-        )? {
+        if let Some(response) =
+            read_matching_response(&mut response_channel, &request_id, &mut last_seen)?
+        {
             return Ok(response);
         }
 

@@ -19,7 +19,7 @@ public class SingleWriterLockTests
         var name = "single_writer_" + Guid.NewGuid().ToString("N");
         var options = new TigaIpcOptions
         {
-            Name = name,
+            ChannelName = name,
             UseSingleWriterLock = true,
             WaitTimeout = TimeSpan.FromSeconds(2),
         };
