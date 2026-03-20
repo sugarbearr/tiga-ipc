@@ -16,15 +16,52 @@ export interface TigaEntry {
 export interface TigaChannelOptions {
   mappingDirectory?: string
 }
-export interface TigaWriteOptions extends TigaChannelOptions {
+export interface TigaWriteOptions {
+  mediaType?: string
+  mappingDirectory?: string
+}
+export interface TigaReadOptions {
+  lastId?: number
+  mappingDirectory?: string
+}
+export interface TigaInvokeOptions {
+  timeoutMs?: number
+  mappingDirectory?: string
+}
+export declare function tigaWrite(name: string, message: Buffer | string, options?: TigaWriteOptions | undefined | null): string
+export declare function tigaRead(name: string, options?: TigaReadOptions | undefined | null): TigaReadResult
+export declare function tigaInvoke(requestName: string, responseName: string, method: string, data: string, options?: TigaInvokeOptions | undefined | null): string
+export declare function createTigaNotificationListener(name: string, options?: TigaChannelOptions | undefined | null): TigaNotificationListener
+export declare class TigaNotificationListener {
+  wait(timeoutMs?: number): boolean
+  close(): void
+  get closed(): boolean
+}
+export interface TigaServerContext {
+  baseName: string
+  clientId: string
+  requestName: string
+  responseName: string
+  mappingDirectory: string
+  requestId: string
+  entryId: number
   mediaType?: string | null
 }
-export interface TigaReadOptions extends TigaChannelOptions {
-  lastId?: number
+export interface TigaServerOptions extends TigaChannelOptions {
+  baseName: string
+  discoveryIntervalMs?: number
+  waitTimeoutMs?: number
+  onInvoke(method: string, data: unknown, context: TigaServerContext): unknown | Promise<unknown>
+  onError?(error: Error, context: Record<string, unknown>): void
 }
-export interface TigaInvokeOptions extends TigaChannelOptions {
-  timeoutMs?: number
+export declare class TigaServer {
+  constructor(options: TigaServerOptions)
+  readonly baseName: string
+  readonly mappingDirectory: string
+  readonly closed: boolean
+  readonly started: boolean
+  start(): TigaServer
+  close(): Promise<void>
 }
-export declare function tigaWrite(name: string, message: Buffer | string, options?: TigaWriteOptions): string
-export declare function tigaRead(name: string, options?: TigaReadOptions): TigaReadResult
-export declare function tigaInvoke(requestName: string, responseName: string, method: string, data: string, options?: TigaInvokeOptions): string
+export declare function createTigaServer(options: TigaServerOptions): TigaServer
+export declare function startTigaServer(options: TigaServerOptions): TigaServer

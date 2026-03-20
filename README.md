@@ -9,6 +9,10 @@ TigaIpc 是一个基于内存映射文件（Memory Mapped File）的高性能、
 - `csharp/`：TigaIpc 核心库、示例程序和测试
 - `nodejs/mmap-napi/`：Node.js N-API 封装，提供 `tigaWrite` / `tigaRead` / `tigaInvoke`
 
+如果你要发布 Node 包到 npm，请直接参考：
+
+- [RELEASE.md](./RELEASE.md)
+
 截至 **2026-03-19**，以下链路已经在当前仓库内完成实测：
 
 - `csharp/TigaIpc.Server` 启动文件映射服务
@@ -46,6 +50,10 @@ TigaIpc/
 │     └─ index.node           # 本地编译产物
 └─ README.md
 ```
+
+发版说明见：
+
+- [RELEASE.md](./RELEASE.md)
 
 ## 核心特性
 

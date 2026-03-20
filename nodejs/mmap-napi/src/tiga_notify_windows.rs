@@ -2,10 +2,9 @@ use memmap2::MmapMut;
 use std::ffi::OsStr;
 use std::io;
 use std::os::windows::ffi::OsStrExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, AtomicI64, Ordering};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::tiga_sys::open_file_shared;
 use crate::wyhash_compat::wyhash_hash_compat;
@@ -16,7 +15,10 @@ use super::{
     NOTIFICATION_SLOT_COUNT,
 };
 
+const LISTENER_READY_EVENT_SUFFIX: &str = "_listener_ready";
+
 pub struct NotificationListener {
+    prefix: PathBuf,
     map: MmapMut,
     slot_index: usize,
     slot_token: i64,
@@ -53,7 +55,17 @@ impl NotificationListener {
             }
         };
 
+        if let Err(err) = sync_listener_ready_event(prefix, true) {
+            unsafe {
+                unregister_notification_slot(&mut map, slot_index, slot_token);
+                windows_sys::Win32::Foundation::CloseHandle(event_handle);
+            }
+
+            return Err(err);
+        }
+
         Ok(Self {
+            prefix: prefix.to_path_buf(),
             map,
             slot_index,
             slot_token,
@@ -78,6 +90,9 @@ impl Drop for NotificationListener {
             unregister_notification_slot(&mut self.map, self.slot_index, self.slot_token);
             windows_sys::Win32::Foundation::CloseHandle(self.event_handle);
         }
+
+        let has_live_listener = has_live_listener(&self.prefix).unwrap_or(false);
+        let _ = sync_listener_ready_event(&self.prefix, has_live_listener);
     }
 }
 
@@ -129,18 +144,31 @@ pub fn signal_updated(prefix: &Path) -> io::Result<bool> {
 }
 
 pub fn wait_for_listener(prefix: &Path, timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if has_live_listener(prefix).unwrap_or(false) {
-            return true;
-        }
-
-        if Instant::now() >= deadline {
-            return false;
-        }
-
-        thread::sleep(Duration::from_millis(50));
+    if has_live_listener(prefix).unwrap_or(false) {
+        let _ = sync_listener_ready_event(prefix, true);
+        return true;
     }
+
+    let _ = sync_listener_ready_event(prefix, false);
+
+    let ready_handle = match create_named_manual_reset_event(
+        &get_listener_ready_event_name(prefix),
+        false,
+    ) {
+        Ok(handle) => handle,
+        Err(_) => return false,
+    };
+
+    let signaled = unsafe {
+        use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+        use windows_sys::Win32::System::Threading::WaitForSingleObject;
+
+        let result = WaitForSingleObject(ready_handle, duration_to_wait_ms(timeout));
+        windows_sys::Win32::Foundation::CloseHandle(ready_handle);
+        result == WAIT_OBJECT_0
+    };
+
+    signaled && has_live_listener(prefix).unwrap_or(false)
 }
 
 fn has_live_listener(prefix: &Path) -> io::Result<bool> {
@@ -356,8 +384,28 @@ fn get_notification_event_name(prefix: &Path, slot_index: usize) -> String {
     format!("{EVENT_PREFIX}{event_scope}{NOTIFICATION_EVENT_SUFFIX}{slot_index}")
 }
 
+fn get_listener_ready_event_name(prefix: &Path) -> String {
+    let event_scope = create_notification_event_scope(prefix);
+    format!("{EVENT_PREFIX}{event_scope}{LISTENER_READY_EVENT_SUFFIX}")
+}
+
 fn create_named_auto_reset_event(name: &str) -> io::Result<windows_sys::Win32::Foundation::HANDLE>
 {
+    create_named_event(name, false, false)
+}
+
+fn create_named_manual_reset_event(
+    name: &str,
+    initial_state: bool,
+) -> io::Result<windows_sys::Win32::Foundation::HANDLE> {
+    create_named_event(name, true, initial_state)
+}
+
+fn create_named_event(
+    name: &str,
+    manual_reset: bool,
+    initial_state: bool,
+) -> io::Result<windows_sys::Win32::Foundation::HANDLE> {
     unsafe {
         use windows_sys::Win32::System::Threading::CreateEventW;
 
@@ -365,13 +413,34 @@ fn create_named_auto_reset_event(name: &str) -> io::Result<windows_sys::Win32::F
             .encode_wide()
             .chain(std::iter::once(0))
             .collect();
-        let handle = CreateEventW(std::ptr::null(), 0, 0, wide_name.as_ptr());
+        let handle = CreateEventW(
+            std::ptr::null(),
+            manual_reset as i32,
+            initial_state as i32,
+            wide_name.as_ptr(),
+        );
         if handle.is_null() {
             return Err(io::Error::last_os_error());
         }
 
         Ok(handle)
     }
+}
+
+fn sync_listener_ready_event(prefix: &Path, ready: bool) -> io::Result<()> {
+    unsafe {
+        use windows_sys::Win32::System::Threading::{ResetEvent, SetEvent};
+
+        let handle = create_named_manual_reset_event(&get_listener_ready_event_name(prefix), ready)?;
+        if ready {
+            SetEvent(handle);
+        } else {
+            ResetEvent(handle);
+        }
+        windows_sys::Win32::Foundation::CloseHandle(handle);
+    }
+
+    Ok(())
 }
 
 fn duration_to_wait_ms(timeout: Duration) -> u32 {

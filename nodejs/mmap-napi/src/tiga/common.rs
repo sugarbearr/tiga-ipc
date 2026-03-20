@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use crate::tiga_channel::TigaChannel;
 use crate::tiga_logbook::{serialize_logbook, LogBook, LogEntry};
 
-pub(super) fn napi_error(message: &str) -> napi::Error {
+pub(crate) fn napi_error(message: &str) -> napi::Error {
     napi::Error::from_reason(message.to_string())
 }
 

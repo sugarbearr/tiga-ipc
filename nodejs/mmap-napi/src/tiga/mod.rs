@@ -1,6 +1,6 @@
-mod common;
+pub(crate) mod common;
 mod invoke;
-mod paths;
+pub(crate) mod paths;
 mod read;
 mod write;
 

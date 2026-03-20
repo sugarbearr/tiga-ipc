@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 const FILE_PREFIX: &str = "tiga_";
 
-pub(super) fn resolve_tiga_prefix(name: &str, mapping_directory: Option<&str>) -> Result<PathBuf, String> {
+pub(crate) fn resolve_tiga_prefix(name: &str, mapping_directory: Option<&str>) -> Result<PathBuf, String> {
     let root = get_mmap_root_path(mapping_directory)?;
     Ok(root.join(format!("{FILE_PREFIX}{name}")))
 }

@@ -1,6 +1,6 @@
 {
   "name": "@tiga-ipc/mmap",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Windows memory-mapped IPC bindings for Tiga channels.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -16,19 +16,22 @@
     "README.md",
     "index.js",
     "index.d.ts",
-    "index.node"
+    "index.node",
+    "runtime/"
   ],
   "os": [
     "win32"
   ],
   "scripts": {
     "test": "cargo test",
-    "cargo-build": "npx @napi-rs/cli build",
-    "cross-build": "npx @napi-rs/cli build",
+    "cargo-build": "node ./scripts/build-addon.js",
+    "cross-build": "node ./scripts/build-addon.js",
     "debug": "npm run cargo-build --",
     "build": "npm run cargo-build -- --release",
     "cross": "npm run cross-build -- --release",
-    "prepack": "node -e \"require('fs').accessSync('index.node')\""
+    "sync:types": "node ./scripts/sync-package-types.js",
+    "publish:check": "npm publish --dry-run --access public",
+    "prepack": "node -e \"require('fs').accessSync('index.node')\" && npm run sync:types"
   },
   "keywords": [
     "ipc",
@@ -51,6 +54,9 @@
     "url": "https://github.com/sugarbearr/TigaIpc/issues"
   },
   "homepage": "https://github.com/sugarbearr/TigaIpc",
+  "dependencies": {
+    "@msgpack/msgpack": "^3.1.2"
+  },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.0"
   }

@@ -1,5 +1,6 @@
 mod tiga;
 mod tiga_channel;
+mod tiga_listener;
 mod tiga_logbook;
 mod tiga_notify;
 mod tiga_protocol;
@@ -8,6 +9,7 @@ mod wyhash_compat;
 
 use napi_derive::napi;
 use tiga::{tiga_invoke_impl, tiga_read_impl, tiga_write_impl};
+use tiga_listener::{create_tiga_notification_listener_impl, TigaNotificationListener};
 
 #[napi]
 pub fn initialized() -> String {
@@ -89,4 +91,12 @@ pub fn tiga_invoke(
     options: Option<TigaInvokeOptions>,
 ) -> Result<String, napi::Error> {
     tiga_invoke_impl(request_name, response_name, method, data, options)
+}
+
+#[napi(js_name = "createTigaNotificationListener")]
+pub fn create_tiga_notification_listener(
+    #[napi(ts_arg_type = "string")] name: String,
+    options: Option<TigaChannelOptions>,
+) -> Result<TigaNotificationListener, napi::Error> {
+    create_tiga_notification_listener_impl(name, options)
 }

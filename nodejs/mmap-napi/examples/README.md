@@ -15,7 +15,20 @@ $env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
 dotnet run --project .\csharp\TigaIpc.Server\TigaIpc.Server.csproj -c Release
 ```
 
-## 2) Run the Node client (invoke)
+## 2) Run the Node server helper (optional)
+
+From `.\nodejs\mmap-napi`:
+
+```powershell
+# build native addon (creates index.node)
+npm run build
+
+# run the Node server helper
+$env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
+node .\examples\tiga_server.js
+```
+
+## 3) Run the Node client (invoke)
 
 From `.\nodejs\mmap-napi`:
 
@@ -28,7 +41,7 @@ $env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
 node .\examples\tiga_invoke.js
 ```
 
-## 3) Run the Node response listener (optional)
+## 4) Run the Node response listener (optional)
 
 ```powershell
 $env:TIGA_IPC_DIR = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
@@ -41,3 +54,4 @@ Notes:
 - `TIGA_IPC_CLIENT_ID` can be set to a fixed client id for testing.
 - The library no longer uses a hidden default local cache directory.
 - The examples read `TIGA_IPC_DIR` and pass it into the addon as `mappingDirectory`.
+- `tigaInvoke(...)` is synchronous, so do not run the server helper and invoke caller on the same Node event loop when you want to test request/response behavior.
