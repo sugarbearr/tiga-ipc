@@ -47,13 +47,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sugarbearr/TigaIpc.git",
+    "url": "git+https://github.com/sugarbearr/tiga-ipc.git",
     "directory": "nodejs/mmap-napi"
   },
   "bugs": {
-    "url": "https://github.com/sugarbearr/TigaIpc/issues"
+    "url": "https://github.com/sugarbearr/tiga-ipc/issues"
   },
-  "homepage": "https://github.com/sugarbearr/TigaIpc",
+  "homepage": "https://github.com/sugarbearr/tiga-ipc",
   "dependencies": {
     "@msgpack/msgpack": "^3.1.2"
   },
