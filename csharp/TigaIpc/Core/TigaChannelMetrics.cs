@@ -3,7 +3,7 @@ using System.Diagnostics;
 
 namespace TigaIpc.Core;
 
-internal class MessageBusMetrics
+internal class TigaChannelMetrics
 {
     private readonly ConcurrentDictionary<string, Stopwatch> _methodTimers = new();
     private readonly ConcurrentDictionary<string, long> _messageCounters = new();

@@ -4,12 +4,12 @@ using TigaIpc.IO;
 namespace TigaIpc.Messaging;
 
 /// <summary>
-/// Message bus class
+/// Channel class
 /// </summary>
-public partial class TigaMessageBus
+public partial class TigaChannel
 {
     /// <summary>
-    /// Publish information to the message bus in the background task as soon as possible
+    /// Publish information to the channel in the background task as soon as possible
     /// </summary>
     /// <param name="message">Message to publish</param>
     /// <param name="cancellationToken">Cancel token</param>
@@ -23,7 +23,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 
         if (message is null)
@@ -44,7 +44,7 @@ public partial class TigaMessageBus
     }
 
     /// <summary>
-    /// Publish information to the message bus in the background task as soon as possible
+    /// Publish information to the channel in the background task as soon as possible
     /// </summary>
     /// <param name="message"></param>
     public Task PublishAsync(BinaryData message, CancellationToken cancellationToken = default)
@@ -56,7 +56,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 
         if (message is null)
@@ -78,7 +78,7 @@ public partial class TigaMessageBus
     {
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 
         await _publishMessageSemaphore.WaitAsync(cancellationToken);
@@ -229,7 +229,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 
         if (message == null)
@@ -350,7 +350,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 
         if (method == null)

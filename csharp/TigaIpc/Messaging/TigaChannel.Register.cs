@@ -4,9 +4,9 @@ using TigaIpc.IO;
 namespace TigaIpc.Messaging;
 
 /// <summary>
-/// message bus class
+/// channel class
 /// </summary>
-public partial class TigaMessageBus
+public partial class TigaChannel
 {
     /// <inheritdoc/>
     public void Register(string method, Func<object?, string> func)

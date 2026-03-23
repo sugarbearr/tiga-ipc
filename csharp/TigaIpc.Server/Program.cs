@@ -40,9 +40,9 @@ class Program
         }.WithRobustConfiguration();
 
         // 2. Initialize Server
-        // TigaPerClientServer manages client connections automatically.
+        // TigaPerClientChannelServer manages client connections automatically.
         // It listens on the main channel for discovery and creates per-client channels.
-        await using var messageBus = new TigaPerClientServer(
+        await using var server = new TigaPerClientChannelServer(
             channelName,
             MappingType.File,
             Options.Create(ipcOptions));
@@ -58,14 +58,14 @@ class Program
         // 3. Register Message Handlers
 
         // Handle fire-and-forget messages (Publish)
-        messageBus.MessageReceived += (_, e) =>
+        server.MessageReceived += (_, e) =>
         {
             Console.WriteLine($"[Received] Publish message: {e.Message}");
         };
 
         // Handle 'invoke' method (Request/Response)
         // Simple string -> string
-        messageBus.Register(EchoMethodName, payload =>
+        server.Register(EchoMethodName, payload =>
         {
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {EchoMethodName} received: '{payload}'");
             return $"Echo response: {payload}";
@@ -73,7 +73,7 @@ class Program
 
         // Handle a typed request/response example.
         // ProfileRequest -> OperationResult
-        messageBus.RegisterAsync<ProfileRequest, OperationResult>(FetchProfileMethodName, async (payload, token) =>
+        server.RegisterAsync<ProfileRequest, OperationResult>(FetchProfileMethodName, async (payload, token) =>
         {
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {FetchProfileMethodName}: {JsonConvert.SerializeObject(payload)}");
 
@@ -87,7 +87,7 @@ class Program
         });
 
         // Handle an async request with a typed result.
-        messageBus.RegisterAsync<OperationResult>(BackgroundJobMethodName, async () =>
+        server.RegisterAsync<OperationResult>(BackgroundJobMethodName, async () =>
         {
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {BackgroundJobMethodName} started...");
             await Task.Delay(500); // Simulate longer work
@@ -96,7 +96,7 @@ class Program
         });
 
         // Handle an async notification with no payload/result contract.
-        messageBus.RegisterAsync(NotifyOnlyMethodName, async () =>
+        server.RegisterAsync(NotifyOnlyMethodName, async () =>
         {
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Invoke] {NotifyOnlyMethodName} started...");
             await Task.Delay(50);
@@ -111,9 +111,9 @@ class Program
             {
                 try
                 {
-                    // This publishes to all connected clients (if supported by TigaPerClientServer implementation)
+                    // This publishes to all connected clients managed by the per-client channel server
                     // or just to the logbook if it's a broadcast.
-                    await messageBus.PublishAsync($"Server heartbeat {DateTime.UtcNow:O}", cts.Token);
+                    await server.PublishAsync($"Server heartbeat {DateTime.UtcNow:O}", cts.Token);
                     await Task.Delay(TimeSpan.FromSeconds(10), cts.Token);
                 }
                 catch (OperationCanceledException) { break; }

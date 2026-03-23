@@ -1,11 +1,11 @@
 namespace TigaIpc.Core;
 
-public class MessageBusException : Exception
+public class TigaChannelException : Exception
 {
     public string MethodName { get; }
     public string? RequestId { get; }
 
-    public MessageBusException(string message, string methodName, string? requestId = null,
+    public TigaChannelException(string message, string methodName, string? requestId = null,
         Exception? innerException = null)
         : base(message, innerException)
     {

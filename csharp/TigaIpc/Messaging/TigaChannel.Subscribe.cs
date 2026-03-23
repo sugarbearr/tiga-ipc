@@ -4,9 +4,9 @@ using System.Threading.Channels;
 namespace TigaIpc.Messaging;
 
 /// <summary>
-/// message bus class
+/// channel class
 /// </summary>
-public partial class TigaMessageBus
+public partial class TigaChannel
 {
     /// <summary>
     /// Subscribe to messages using an async enumerable.
@@ -19,7 +19,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 #endif
 

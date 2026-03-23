@@ -1,9 +1,9 @@
 namespace TigaIpc.Messaging;
 
 /// <summary>
-/// message bus class
+/// channel class
 /// </summary>
-public partial class TigaMessageBus
+public partial class TigaChannel
 {
     /// <summary>
     /// Responding to requests with a specific ID and response code
@@ -21,7 +21,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 #endif
 

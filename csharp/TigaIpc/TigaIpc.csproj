@@ -11,7 +11,7 @@
 		<Company>TigaIpc</Company>
 		<Product>TigaIpc</Product>
 		<Description>High-performance local IPC library built on memory-mapped files.</Description>
-		<PackageTags>ipc;mmap;memory-mapped-file;message-bus;interprocess-communication;tiga</PackageTags>
+		<PackageTags>ipc;mmap;memory-mapped-file;channel;interprocess-communication;tiga</PackageTags>
 		<PackageProjectUrl>https://github.com/sugarbearr/TigaIpc</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/sugarbearr/TigaIpc</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>

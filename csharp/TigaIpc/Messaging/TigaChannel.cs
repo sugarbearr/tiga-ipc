@@ -16,9 +16,9 @@ using IAsyncDisposable = Microsoft.VisualStudio.Threading.IAsyncDisposable;
 namespace TigaIpc.Messaging
 {
     /// <summary>
-    /// TigaMessageBus is a message bus that can be used to communicate between processes.
+    /// TigaChannel is a bidirectional IPC channel that can be used to communicate between processes.
     /// </summary>
-    public partial class TigaMessageBus : ITigaMessageBus
+    public partial class TigaChannel : ITigaChannel
     {
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         private readonly Guid _instanceId = Guid.NewGuid();
@@ -37,7 +37,7 @@ namespace TigaIpc.Messaging
         private readonly ConcurrentDictionary<string, object> _asyncGenericEventAggregator = new();
         private readonly ConcurrentDictionary<string, TaskCompletionSource<ResponseMessage>> _pendingResponses = new();
 
-        private readonly ILogger<TigaMessageBus>? _logger;
+        private readonly ILogger<TigaChannel>? _logger;
         private readonly bool _enableCompression;
         private readonly int _compressionThreshold;
         private readonly int _logBookSchemaVersion;
@@ -85,20 +85,20 @@ namespace TigaIpc.Messaging
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class.
+        /// Initializes a new instance of the <see cref="TigaChannel"/> class.
         /// </summary>
-        /// <param name="name">A unique system wide name of this message bus, internal primitives will be prefixed before use.</param>
+        /// <param name="name">A unique system wide name of this channel. Internal primitives will be prefixed before use.</param>
         /// <param name="type">type.</param>
         /// <param name="options">Options from dependency injection or an OptionsWrapper containing options.</param>
         /// <param name="logger">logger.</param>
 #if NET
         [SupportedOSPlatform("windows")]
 #endif
-        public TigaMessageBus(
+        public TigaChannel(
             string name,
             MappingType type = MappingType.Memory,
             IOptions<TigaIpcOptions>? options = null,
-            ILogger<TigaMessageBus>? logger = null)
+            ILogger<TigaChannel>? logger = null)
             : this(
                 TigaMemoryMappedFileFactory.Create(
                     name,
@@ -117,11 +117,11 @@ namespace TigaIpc.Messaging
                 logger)
         {
             Name = name;
-            Println("Wait-free synchronization enabled for TigaMessageBus instance");
+            Println("Wait-free synchronization enabled for TigaChannel instance");
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class with separate read/write channels.
+        /// Initializes a new instance of the <see cref="TigaChannel"/> class with separate read/write channels.
         /// </summary>
         /// <param name="readName">Name of the read channel.</param>
         /// <param name="writeName">Name of the write channel.</param>
@@ -131,12 +131,12 @@ namespace TigaIpc.Messaging
 #if NET
         [SupportedOSPlatform("windows")]
 #endif
-        public TigaMessageBus(
+        public TigaChannel(
             string readName,
             string writeName,
             MappingType type = MappingType.Memory,
             IOptions<TigaIpcOptions>? options = null,
-            ILogger<TigaMessageBus>? logger = null)
+            ILogger<TigaChannel>? logger = null)
             : this(
                 TigaMemoryMappedFileFactory.Create(
                     readName,
@@ -155,11 +155,11 @@ namespace TigaIpc.Messaging
                 logger)
         {
             Name = $"{readName}|{writeName}";
-            Println("Wait-free synchronization enabled for TigaMessageBus instance");
+            Println("Wait-free synchronization enabled for TigaChannel instance");
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class.
+        /// Initializes a new instance of the <see cref="TigaChannel"/> class.
         /// </summary>
         /// <param name="memoryMappedFile">
         /// An instance of a ITigaMemoryMappedFile that will be used to transmit messages.
@@ -167,10 +167,10 @@ namespace TigaIpc.Messaging
         /// </param>
         /// <param name="options">Options from dependency injection or an OptionsWrapper containing options.</param>
         /// <param name="logger">logger.</param>
-        public TigaMessageBus(
+        public TigaChannel(
             ITigaMemoryMappedFile memoryMappedFile,
             IOptions<TigaIpcOptions>? options = null,
-            ILogger<TigaMessageBus>? logger = null)
+            ILogger<TigaChannel>? logger = null)
             : this(
                 memoryMappedFile,
                 disposeReadFile: false,
@@ -183,7 +183,7 @@ namespace TigaIpc.Messaging
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class.
+        /// Initializes a new instance of the <see cref="TigaChannel"/> class.
         /// </summary>
         /// <param name="memoryMappedFile">
         /// An instance of a ITigaMemoryMappedFile that will be used to transmit messages.
@@ -192,11 +192,11 @@ namespace TigaIpc.Messaging
         /// <param name="disposeFile">Set to true if the file is to be disposed when this instance is disposed.</param>
         /// <param name="options">Options from dependency injection or an OptionsWrapper containing options.</param>
         /// <param name="logger">logger.</param>
-        public TigaMessageBus(
+        public TigaChannel(
             ITigaMemoryMappedFile memoryMappedFile,
             bool disposeFile,
             IOptions<TigaIpcOptions>? options = null,
-            ILogger<TigaMessageBus>? logger = null)
+            ILogger<TigaChannel>? logger = null)
             : this(
                 memoryMappedFile,
                 disposeReadFile: disposeFile,
@@ -209,7 +209,7 @@ namespace TigaIpc.Messaging
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class.
+        /// Initializes a new instance of the <see cref="TigaChannel"/> class.
         /// </summary>
         /// <param name="memoryMappedFile">
         /// An instance of a ITigaMemoryMappedFile that will be used to transmit messages.
@@ -219,12 +219,12 @@ namespace TigaIpc.Messaging
         /// <param name="timeProvider">Set the time provider to use.</param>
         /// <param name="options">Options from dependency injection or an OptionsWrapper containing options.</param>
         /// <param name="logger">Set the logger to use.</param>
-        public TigaMessageBus(
+        public TigaChannel(
             ITigaMemoryMappedFile memoryMappedFile,
             bool disposeFile,
             TimeProvider timeProvider,
             IOptions<TigaIpcOptions> options,
-            ILogger<TigaMessageBus>? logger = null)
+            ILogger<TigaChannel>? logger = null)
             : this(
                 memoryMappedFile,
                 disposeReadFile: disposeFile,
@@ -237,16 +237,16 @@ namespace TigaIpc.Messaging
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class with separate read/write channels.
+        /// Initializes a new instance of the <see cref="TigaChannel"/> class with separate read/write channels.
         /// </summary>
-        public TigaMessageBus(
+        public TigaChannel(
             ITigaMemoryMappedFile readFile,
             bool disposeReadFile,
             ITigaMemoryMappedFile writeFile,
             bool disposeWriteFile,
             TimeProvider timeProvider,
             IOptions<TigaIpcOptions> options,
-            ILogger<TigaMessageBus>? logger = null)
+            ILogger<TigaChannel>? logger = null)
         {
             _readFile = readFile ?? throw new ArgumentNullException(nameof(readFile));
             _writeFile = writeFile ?? throw new ArgumentNullException(nameof(writeFile));
@@ -279,7 +279,7 @@ namespace TigaIpc.Messaging
                 _ = ReceiveMessagesAsync();
 
                 Println(
-                    $"TigaMessageBus initialized (InstanceId={_instanceId}, WaitTimeout={waitTimeout}, MaxPublishRetries={maxPublishRetries}, MinMessageAge={minMessageAge}, Compression={_enableCompression}/{_compressionThreshold})");
+                    $"TigaChannel initialized (InstanceId={_instanceId}, WaitTimeout={waitTimeout}, MaxPublishRetries={maxPublishRetries}, MinMessageAge={minMessageAge}, Compression={_enableCompression}/{_compressionThreshold})");
             }
             catch
             {
@@ -315,12 +315,12 @@ namespace TigaIpc.Messaging
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TigaMessageBus"/> class with custom tasks.
+        /// Initializes a new instance of the <see cref="TigaChannel"/> class with custom tasks.
         /// This constructor is primarily used for testing purposes.
         /// </summary>
         /// <param name="receiverTask">The task that will be used for receiving messages.</param>
         /// <param name="responseTask">The task that will be used for handling responses.</param>
-        public TigaMessageBus(Task receiverTask, Task responseTask)
+        public TigaChannel(Task receiverTask, Task responseTask)
         {
             _receiverTask = receiverTask ?? throw new ArgumentNullException(nameof(receiverTask));
             _instanceId = Guid.NewGuid();
@@ -523,7 +523,7 @@ namespace TigaIpc.Messaging
                 catch (Exception ex)
                 {
                     // only record exceptions, do not rethrow, to ensure the resource release process is complete
-                    PrintFailed(ex, "Unexpected error during TigaMessageBus disposal");
+                    PrintFailed(ex, "Unexpected error during TigaChannel disposal");
                 }
             }
         }
@@ -679,7 +679,7 @@ namespace TigaIpc.Messaging
                 catch (Exception ex)
                 {
                     // only record exceptions, do not rethrow, to ensure the resource release process is complete
-                    PrintFailed(ex, "Unexpected error during TigaMessageBus async disposal");
+                    PrintFailed(ex, "Unexpected error during TigaChannel async disposal");
                 }
             }
         }
@@ -694,7 +694,7 @@ namespace TigaIpc.Messaging
 #else
             if (_disposed)
             {
-                throw new ObjectDisposedException(nameof(TigaMessageBus));
+                throw new ObjectDisposedException(nameof(TigaChannel));
             }
 #endif
 
@@ -821,7 +821,7 @@ namespace TigaIpc.Messaging
         {
             if (_disposed)
             {
-                throw new ObjectDisposedException(nameof(TigaMessageBus));
+                throw new ObjectDisposedException(nameof(TigaChannel));
             }
 
             if (message == null || message.Length == 0)

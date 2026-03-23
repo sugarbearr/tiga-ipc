@@ -2,7 +2,7 @@ using TigaIpc.IO;
 
 namespace TigaIpc.Messaging;
 
-public partial interface ITigaMessageBus : IDisposable, IAsyncDisposable
+public partial interface ITigaChannel : IDisposable, IAsyncDisposable
 {
     /// <summary>
     /// when a new message is received
@@ -20,7 +20,7 @@ public partial interface ITigaMessageBus : IDisposable, IAsyncDisposable
     long MessagesReceived { get; }
 
     /// <summary>
-    /// the name of the message bus
+    /// the name of the channel
     /// </summary>
     string? Name { get; }
 
@@ -30,7 +30,7 @@ public partial interface ITigaMessageBus : IDisposable, IAsyncDisposable
     SynchronizationMetrics? GetSynchronizationMetrics();
 }
 
-public partial interface ITigaMessageBus
+public partial interface ITigaChannel
 {
     /// <summary>
     /// reset the message send and receive counters
@@ -59,10 +59,10 @@ public partial interface ITigaMessageBus
     );
 }
 
-public partial interface ITigaMessageBus
+public partial interface ITigaChannel
 {
     /// <summary>
-    /// invoke a method on the message bus with no parameters
+    /// invoke a method on the channel with no parameters
     /// </summary>
     /// <param name="method">method name</param>
     /// <param name="timeout">timeout</param>
@@ -74,7 +74,7 @@ public partial interface ITigaMessageBus
     );
 
     /// <summary>
-    /// invoke a method on the message bus with no parameters and get a typed result
+    /// invoke a method on the channel with no parameters and get a typed result
     /// </summary>
     /// <typeparam name="T">return type</typeparam>
     /// <param name="method">method name</param>
@@ -88,17 +88,17 @@ public partial interface ITigaMessageBus
     );
 }
 
-public partial interface ITigaMessageBus
+public partial interface ITigaChannel
 {
     /// <summary>
-    /// Publish a message to the message bus
+    /// Publish a message to the channel
     /// </summary>
     /// <param name="message">message</param>
     /// <param name="cancellationToken">cancellation token</param>
     Task PublishAsync(BinaryData message, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// publish multiple messages to the message bus
+    /// publish multiple messages to the channel
     /// </summary>
     /// <param name="messages">message list</param>
     /// <param name="cancellationToken">cancellation token</param>
@@ -140,7 +140,7 @@ public partial interface ITigaMessageBus
     );
 }
 
-public partial interface ITigaMessageBus
+public partial interface ITigaChannel
 {
     /// <summary>
     /// register a synchronous method

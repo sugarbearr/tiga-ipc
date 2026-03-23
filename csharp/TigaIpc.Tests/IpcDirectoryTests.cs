@@ -49,12 +49,12 @@ public class IpcDirectoryTests
     }
 
     [Fact]
-    public void PerClientServer_FileMappingRequiresDirectory()
+    public void PerClientChannelServer_FileMappingRequiresDirectory()
     {
         var options = Options.Create(new TigaIpcOptions());
 
         var ex = Assert.Throws<InvalidOperationException>(
-            () => new TigaPerClientServer("sample", MappingType.File, options));
+            () => new TigaPerClientChannelServer("sample", MappingType.File, options));
 
         Assert.Contains(nameof(TigaIpcOptions.IpcDirectory), ex.Message, StringComparison.Ordinal);
     }

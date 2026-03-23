@@ -4,9 +4,9 @@ using TigaIpc.IO;
 namespace TigaIpc.Messaging;
 
 /// <summary>
-/// Message bus class
+/// Channel class
 /// </summary>
-public partial class TigaMessageBus
+public partial class TigaChannel
 {
     /// <inheritdoc/>
     public async Task<string> InvokeAsync(string method, object? data, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
@@ -18,7 +18,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 
         if (method == null)
@@ -51,7 +51,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 
         if (method == null)
@@ -97,7 +97,7 @@ public partial class TigaMessageBus
     }
 
     /// <summary>
-    /// Invoke a method on the message bus with no parameters
+    /// Invoke a method on the channel with no parameters
     /// </summary>
     /// <param name="method">method name</param>
     /// <param name="timeout">timeout</param>
@@ -109,7 +109,7 @@ public partial class TigaMessageBus
     }
 
     /// <summary>
-    /// Invoke a method on the message bus with no parameters and get a typed result
+    /// Invoke a method on the channel with no parameters and get a typed result
     /// </summary>
     /// <typeparam name="T">return type</typeparam>
     /// <param name="method">method name</param>
@@ -137,7 +137,7 @@ public partial class TigaMessageBus
 #else
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(TigaMessageBus));
+            throw new ObjectDisposedException(nameof(TigaChannel));
         }
 
         if (method == null)

@@ -4,7 +4,7 @@ using Xunit;
 
 namespace TigaIpc.Tests;
 
-public class MessageBusConcurrencyTests
+public class ChannelConcurrencyTests
 {
     [Fact(Timeout = 15000)]
     public async Task PublishReceive_MultiInstance_Concurrent()
@@ -20,8 +20,8 @@ public class MessageBusConcurrencyTests
         };
         var optionsWrapper = new OptionsWrapper<TigaIpcOptions>(options);
 
-        await using var publisher = new TigaMessageBus(name, MappingType.Memory, optionsWrapper);
-        await using var subscriber = new TigaMessageBus(name, MappingType.Memory, optionsWrapper);
+        await using var publisher = new TigaChannel(name, MappingType.Memory, optionsWrapper);
+        await using var subscriber = new TigaChannel(name, MappingType.Memory, optionsWrapper);
 
         const int expected = 200;
         var received = 0;

@@ -23,8 +23,8 @@ public class LogBookSchemaTests
         };
 
         var optionsWrapper = new OptionsWrapper<TigaIpcOptions>(options);
-        await using var publisher = new TigaMessageBus(name, MappingType.Memory, optionsWrapper);
-        await using var subscriber = new TigaMessageBus(name, MappingType.Memory, optionsWrapper);
+        await using var publisher = new TigaChannel(name, MappingType.Memory, optionsWrapper);
+        await using var subscriber = new TigaChannel(name, MappingType.Memory, optionsWrapper);
 
         var received = 0;
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -78,7 +78,7 @@ public class LogBookSchemaTests
             Assert.Throws<InvalidOperationException>(() =>
             {
                 using var bus =
-                    new TigaMessageBus(name, MappingType.File, new OptionsWrapper<TigaIpcOptions>(strictOptions));
+                    new TigaChannel(name, MappingType.File, new OptionsWrapper<TigaIpcOptions>(strictOptions));
             });
         }
         finally

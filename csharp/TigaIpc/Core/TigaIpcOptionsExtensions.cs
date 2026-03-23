@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 namespace TigaIpc.Core;
 
 /// <summary>
-/// 为TigaIpcOptions提供与MessageBusOptions兼容的扩展方法
+/// 为TigaIpcOptions提供与TigaChannelOptions兼容的扩展方法
 /// </summary>
 public static class TigaIpcOptionsExtensions
 {

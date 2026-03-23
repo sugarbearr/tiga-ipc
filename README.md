@@ -65,7 +65,7 @@ TigaIpc/
   - 支持通过共享目录进行本地进程通信
   - 文件映射目录需要由调用侧显式提供；核心库不再内置默认本地缓存目录
 - 请求 / 响应与发布 / 订阅
-  - C# 侧通过 `TigaMessageBus` / `TigaPerClientServer` 暴露消息模式
+  - C# 侧通过 `TigaChannel` / `TigaPerClientChannelServer` 暴露消息模式
   - Node 侧通过 `tigaWrite` / `tigaRead` / `tigaInvoke` 对接
 - 兼容当前通知协议
   - Node 侧已对齐当前 C# 的 `_notify` slot-based 通知方案
@@ -398,9 +398,9 @@ cargo test
 
 - `TigaIpc/IO/WaitFreeMemoryMappedFile.cs`
   - wait-free 数据面实现
-- `TigaIpc/Messaging/TigaMessageBus*.cs`
-  - 消息总线、注册、响应、发布逻辑
-- `TigaIpc/Messaging/TigaPerClientServer.cs`
+- `TigaIpc/Messaging/TigaChannel*.cs`
+  - 单通道读写、注册、响应、发布逻辑
+- `TigaIpc/Messaging/TigaPerClientChannelServer.cs`
   - 每客户端拓扑与发现逻辑
 
 ### Node 侧

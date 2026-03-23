@@ -14,18 +14,18 @@ public class PerClientTopologyTests
         var options = new TigaIpcOptions { ChannelName = name };
         var optionsWrapper = new OptionsWrapper<TigaIpcOptions>(options);
 
-        await using var server = new TigaPerClientServer(name, MappingType.Memory, optionsWrapper);
+        await using var server = new TigaPerClientChannelServer(name, MappingType.Memory, optionsWrapper);
         server.AddClient("client-a");
         server.AddClient("client-b");
         server.Register("method", payload => $"Echo: {payload}");
 
-        await using var clientA = new TigaMessageBus(
+        await using var clientA = new TigaChannel(
             PerClientChannelNames.GetResponseChannelName(name, "client-a"),
             PerClientChannelNames.GetRequestChannelName(name, "client-a"),
             MappingType.Memory,
             optionsWrapper);
 
-        await using var clientB = new TigaMessageBus(
+        await using var clientB = new TigaChannel(
             PerClientChannelNames.GetResponseChannelName(name, "client-b"),
             PerClientChannelNames.GetRequestChannelName(name, "client-b"),
             MappingType.Memory,

@@ -60,7 +60,7 @@ static int PublishBurst(string name, string? countArg)
         MinMessageAge = TimeSpan.FromMilliseconds(100),
     };
 
-    using var bus = new TigaMessageBus(name, MappingType.Memory, new OptionsWrapper<TigaIpcOptions>(options));
+    using var bus = new TigaChannel(name, MappingType.Memory, new OptionsWrapper<TigaIpcOptions>(options));
     Console.WriteLine("ready");
     Console.Out.Flush();
 

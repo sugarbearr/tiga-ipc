@@ -25,7 +25,7 @@ public class ProcessRestartTests
         var received = 0;
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        await using var subscriber = new TigaMessageBus(name, MappingType.Memory, new OptionsWrapper<TigaIpcOptions>(options));
+        await using var subscriber = new TigaChannel(name, MappingType.Memory, new OptionsWrapper<TigaIpcOptions>(options));
         subscriber.MessageReceived += (_, _) =>
         {
             if (Interlocked.Increment(ref received) == expectedTotal)

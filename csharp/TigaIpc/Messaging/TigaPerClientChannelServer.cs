@@ -5,26 +5,26 @@ using TigaIpc.IO;
 
 namespace TigaIpc.Messaging;
 
-public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
+public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
 {
     private readonly string _name;
     private readonly MappingType _mappingType;
     private readonly IOptions<TigaIpcOptions> _options;
-    private readonly ILogger<TigaMessageBus>? _logger;
+    private readonly ILogger<TigaChannel>? _logger;
     private readonly TimeProvider _timeProvider;
-    private readonly ConcurrentDictionary<string, TigaMessageBus> _clients = new();
-    private readonly List<Action<TigaMessageBus>> _registrations = new();
+    private readonly ConcurrentDictionary<string, TigaChannel> _clients = new();
+    private readonly List<Action<TigaChannel>> _registrations = new();
     private readonly object _registrationLock = new();
     private readonly object _clientLock = new();
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly Task? _discoveryTask;
     private bool _disposed;
 
-    public TigaPerClientServer(
+    public TigaPerClientChannelServer(
         string name,
         MappingType type = MappingType.Memory,
         IOptions<TigaIpcOptions>? options = null,
-        ILogger<TigaMessageBus>? logger = null,
+        ILogger<TigaChannel>? logger = null,
         TimeProvider? timeProvider = null)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -160,7 +160,7 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
         GC.SuppressFinalize(this);
     }
 
-    private void ApplyRegistration(Action<TigaMessageBus> registration)
+    private void ApplyRegistration(Action<TigaChannel> registration)
     {
         if (registration == null)
         {
@@ -178,7 +178,7 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
         }
     }
 
-    private TigaMessageBus CreateClientBus(string clientId)
+    private TigaChannel CreateClientBus(string clientId)
     {
         var requestName = PerClientChannelNames.GetRequestChannelName(_name, clientId);
         var responseName = PerClientChannelNames.GetResponseChannelName(_name, clientId);
@@ -186,7 +186,7 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
         var readFile = TigaMemoryMappedFileFactory.Create(requestName, _mappingType, _options, out _);
         var writeFile = TigaMemoryMappedFileFactory.Create(responseName, _mappingType, _options, out _);
 
-        var bus = new TigaMessageBus(
+        var bus = new TigaChannel(
             readFile,
             disposeReadFile: true,
             writeFile,
@@ -213,7 +213,7 @@ public sealed class TigaPerClientServer : IDisposable, IAsyncDisposable
         MessageReceived?.Invoke(this, e);
     }
 
-    private async Task PublishToAllAsync(Func<TigaMessageBus, Task> publish)
+    private async Task PublishToAllAsync(Func<TigaChannel, Task> publish)
     {
         var clients = _clients.Values.ToArray();
         if (clients.Length == 0)

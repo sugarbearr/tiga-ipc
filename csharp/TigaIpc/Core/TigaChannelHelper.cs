@@ -5,7 +5,7 @@ using Newtonsoft.Json.Converters;
 
 namespace TigaIpc.Core;
 
-internal static class MessageBusHelper
+internal static class TigaChannelHelper
 {
     private static readonly JsonSerializerSettings SerializerSettings = new()
     {
@@ -50,7 +50,7 @@ internal static class MessageBusHelper
                     methodName,
                     requestId
                 );
-                throw new MessageBusException(
+                throw new TigaChannelException(
                     $"Error executing method '{methodName}'",
                     methodName,
                     requestId,
@@ -68,7 +68,7 @@ internal static class MessageBusHelper
         }
         catch (JsonException ex)
         {
-            throw new MessageBusException(
+            throw new TigaChannelException(
                 $"Failed to deserialize response from method '{methodName}'. Response: {response}",
                 methodName,
                 null,

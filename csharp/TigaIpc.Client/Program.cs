@@ -59,7 +59,7 @@ class Program
         Console.WriteLine($"  Response Channel: {responseName}");
         Console.WriteLine($"  IPC Directory: {ipcDirectory}");
 
-        await using var messageBus = new TigaMessageBus(
+        await using var channel = new TigaChannel(
             responseName,
             requestName,
             MappingType.File,
@@ -76,23 +76,8 @@ class Program
             cts.Cancel();
         };
 
-        // Start a background listener for server messages if needed,
-        // but TigaMessageBus handles subscriptions via callbacks usually.
-        // If we want to receive broadcasts from server, we should subscribe.
-        // The server example sends "Server heartbeat...", let's subscribe to it.
-        // However, TigaMessageBus is generally for P2P or Client-Server.
-        // If this client acts as a "server" for the "server" to call back, it needs to register handlers.
-        // But here TigaMessageBus is initialized with (responseName, requestName).
-        // It listens on 'responseName' and writes to 'requestName'.
-        // The server listens on 'ChannelName' (which is the main entry) or manages per-client.
-        // Wait, TigaPerClientServer manages per-client channels.
-
-        // Let's assume the server publishes heartbeats to the client's response channel?
-        // Or does the server publish to a global channel?
-        // TigaPerClientServer usually handles requests from clients.
-        // The server code: `await messageBus.PublishAsync($"Server heartbeat ...")`
-        // If TigaPerClientServer publishes, does it go to all clients?
-        // We'll see. For now let's just implement the interactive loop.
+        // This client reads from its per-client response channel and writes to its request channel.
+        // The server-side per-client channel server binds the matching pair for each discovered client.
 
         try
         {
@@ -117,7 +102,7 @@ class Program
                                 var payload = argument ?? "hello";
                                 Console.WriteLine($"Sending invoke: {payload}...");
                                 var sw = Stopwatch.StartNew();
-                                var response = await messageBus.InvokeAsync(
+                                var response = await channel.InvokeAsync(
                                     EchoMethodName,
                                     payload,
                                     cancellationToken: cts.Token
@@ -138,7 +123,7 @@ class Program
                                 Console.WriteLine($"Requesting profile for: {name}...");
                                 var sw = Stopwatch.StartNew();
                                 // Note: Server expects fetchProfile with ProfileRequest and returns OperationResult.
-                                var response = await messageBus.InvokeAsync<OperationResult>(
+                                var response = await channel.InvokeAsync<OperationResult>(
                                     FetchProfileMethodName,
                                     profileRequest,
                                     cancellationToken: cts.Token
@@ -153,7 +138,7 @@ class Program
                             {
                                 var message = argument ?? "ping";
                                 Console.WriteLine($"Publishing: {message}...");
-                                await messageBus.PublishAsync(
+                                await channel.PublishAsync(
                                     $"Client message: {message}",
                                     cancellationToken: cts.Token
                                 );
@@ -164,7 +149,7 @@ class Program
                             {
                                 Console.WriteLine($"Calling {BackgroundJobMethodName}...");
                                 var sw = Stopwatch.StartNew();
-                                var response = await messageBus.InvokeAsync<OperationResult>(
+                                var response = await channel.InvokeAsync<OperationResult>(
                                     BackgroundJobMethodName,
                                     cancellationToken: cts.Token
                                 );
@@ -178,7 +163,7 @@ class Program
                             {
                                 Console.WriteLine($"Calling {NotifyOnlyMethodName}...");
                                 var sw = Stopwatch.StartNew();
-                                await messageBus.InvokeAsync(
+                                await channel.InvokeAsync(
                                     NotifyOnlyMethodName,
                                     cancellationToken: cts.Token
                                 );
@@ -197,7 +182,7 @@ class Program
                                 {
                                     if (cts.IsCancellationRequested)
                                         break;
-                                    await messageBus.InvokeAsync(
+                                    await channel.InvokeAsync(
                                         EchoMethodName,
                                         $"stress-{i}",
                                         cancellationToken: cts.Token

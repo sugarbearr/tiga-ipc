@@ -1,6 +1,6 @@
 namespace TigaIpc.Core;
 
-public class MessageBusOptions
+public class TigaChannelOptions
 {
     public TimeSpan DefaultTimeout { get; set; } = TimeSpan.FromSeconds(30);
     public int MaxRetries { get; set; } = 3;
