@@ -12,7 +12,7 @@ dotnet build .\csharp\TigaIpc.Server\TigaIpc.Server.csproj -c Release
 
 # run server
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 dotnet run --project .\csharp\TigaIpc.Server\TigaIpc.Server.csproj -c Release
 ```
 
@@ -26,7 +26,7 @@ npm run build
 
 # run the Node server helper
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 node .\examples\tiga_server.js
 ```
 
@@ -40,7 +40,7 @@ npm run build
 
 # run example
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 node .\examples\tiga_invoke.js
 ```
 
@@ -48,12 +48,12 @@ node .\examples\tiga_invoke.js
 
 ```powershell
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 node .\examples\tiga_read.js
 ```
 
 Notes:
-- The default channel name is `SampleChannel` (matches the C# samples).
+- The default channel name is `sample` (matches the C# samples).
 - The invoke example calls the `echo` handler on the sample server.
 - `TIGA_IPC_CLIENT_ID` can be set to a fixed client id for testing.
 - The library no longer uses a hidden default local cache directory.

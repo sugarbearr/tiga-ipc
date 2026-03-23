@@ -17,7 +17,7 @@ if (!ipcDirectory) {
   process.exit(1);
 }
 
-const channelName = process.env.TIGA_CHANNEL_NAME || 'SampleChannel';
+const channelName = process.env.TIGA_CHANNEL_NAME || 'sample';
 const req = `${channelName}.req.${clientId}`;
 const resp = `${channelName}.resp.${clientId}`;
 

@@ -1,7 +1,7 @@
 const mmap = require('..');
 
 const ipcDirectory = process.env.TIGA_IPC_DIRECTORY || process.argv[2];
-const channelName = process.env.TIGA_CHANNEL_NAME || 'SampleChannel';
+const channelName = process.env.TIGA_CHANNEL_NAME || 'sample';
 
 if (!ipcDirectory) {
   console.error(

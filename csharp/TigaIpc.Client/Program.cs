@@ -25,7 +25,7 @@ public class ProfileRequest
 [SupportedOSPlatform("windows")]
 class Program
 {
-    private const string DefaultChannelName = "SampleChannel";
+    private const string DefaultChannelName = "sample";
     private const string EchoMethodName = "echo";
     private const string FetchProfileMethodName = "fetchProfile";
     private const string BackgroundJobMethodName = "backgroundJob";

@@ -21,13 +21,14 @@ TigaIpc 是一个基于内存映射文件（Memory Mapped File）的高性能、
 
 为避免在文档里暴露业务命名，下面统一使用这些中性占位：
 
-- `<BaseChannel>`：逻辑通道名
+- `<channelName>`：逻辑通道名
 - `<clientId>`：客户端标识
-- `<FilePrefix>`：底层映射文件前缀
+- `<filePrefix>`：底层映射文件前缀
+- `<mappingPrefix>`：底层映射文件名前缀，等于 `<filePrefix><channelName>`
 
 说明：
 
-- 当前仓库里的示例代码默认使用中性的示例通道名 `SampleChannel`
+- 当前仓库里的示例代码默认使用中性的示例通道名 `sample`
 - 当前仓库里的底层固定映射前缀已统一为 `tiga_`
 - README 继续使用占位名，是为了说明协议和使用方式，而不是要求你必须使用某个固定业务名称
 
@@ -70,7 +71,7 @@ TigaIpc/
   - Node 侧已对齐当前 C# 的 `_notify` slot-based 通知方案
   - 已修复跨语言 listener 判活中的进程启动时间基准差异
 - 多客户端拓扑
-  - 服务端按 `base.req.<clientId>` / `base.resp.<clientId>` 为每个客户端建立独立通道
+- 服务端按 `channelName.req.<clientId>` / `channelName.resp.<clientId>` 为每个客户端建立独立通道
   - 当前跨语言实测链路聚焦于 `MappingType.File` + per-client request/response
 
 ## 协议概览
@@ -79,10 +80,10 @@ TigaIpc/
 
 每个逻辑通道对应以下文件：
 
-- `<prefix>_state`
-- `<prefix>_data_0`
-- `<prefix>_data_1`
-- `<prefix>_notify`
+- `<mappingPrefix>_state`
+- `<mappingPrefix>_data_0`
+- `<mappingPrefix>_data_1`
+- `<mappingPrefix>_notify`
 
 其中：
 
@@ -92,14 +93,14 @@ TigaIpc/
 
 ### 每客户端通道命名
 
-以逻辑通道 `<BaseChannel>` 为例：
+以逻辑通道 `<channelName>` 为例：
 
-- 请求通道：`<BaseChannel>.req.<clientId>`
-- 响应通道：`<BaseChannel>.resp.<clientId>`
+- 请求通道：`<channelName>.req.<clientId>`
+- 响应通道：`<channelName>.resp.<clientId>`
 
 服务端会在共享目录中发现：
 
-- `<FilePrefix>_<BaseChannel>.req.<clientId>_state`
+- `<filePrefix><channelName>.req.<clientId>_state`
 
 随后自动为该客户端建立消息总线并注册处理器。
 
@@ -160,13 +161,13 @@ TigaIpc/
 ```powershell
 cd .\csharp\TigaIpc.Server
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 dotnet run -c Release
 ```
 
 预期看到：
 
-- `Channel Name: SampleChannel`
+- `Channel Name: sample`
 - `IPC Directory: ...\tiga-ipc`
 - `Server ready. Press Ctrl+C to exit.`
 
@@ -184,7 +185,7 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 cd .\nodejs\mmap-napi
 $env:TIGA_IPC_CLIENT_ID = 'sample-client'
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 node .\examples\tiga_invoke.js
 ```
 
@@ -192,17 +193,17 @@ node .\examples\tiga_invoke.js
 
 ```text
 clientId=sample-client
-channelName=SampleChannel
+channelName=sample
 ipcDirectory=C:\Users\Administrator\AppData\Local\Temp\tiga-ipc
-request=SampleChannel.req.sample-client
-response=SampleChannel.resp.sample-client
+request=sample.req.sample-client
+response=sample.resp.sample-client
 invoke reply: Echo response: hello from sample-client
 ```
 
 如果这一组命令能跑通，说明下面几件事同时成立：
 
 - `_state / _data_0 / _data_1 / _notify` 文件布局匹配
-- C# 服务端已经正确发现 `<BaseChannel>.req.<clientId>`
+- C# 服务端已经正确发现 `<channelName>.req.<clientId>`
 - Rust/Node 侧生成的消息体能被 C# 正常解析
 - C# 返回值能被 Node 侧正确读回
 
@@ -213,13 +214,13 @@ invoke reply: Echo response: hello from sample-client
 ```powershell
 cd .\csharp\TigaIpc.Server
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 dotnet run
 ```
 
 当前示例要求显式提供映射目录：
 
-- 通道名：`SampleChannel`
+- 通道名：`sample`
 - IPC 目录：通过 `TIGA_IPC_DIRECTORY` 或第一个命令行参数传入，然后写入 `TigaIpcOptions.IpcDirectory`
 
 服务端当前注册的示例方法：
@@ -234,7 +235,7 @@ dotnet run
 ```powershell
 cd .\csharp\TigaIpc.Client
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 dotnet run
 ```
 
@@ -301,7 +302,7 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 cd .\nodejs\mmap-napi
 $env:TIGA_IPC_CLIENT_ID = 'sample-client'
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 node .\examples\tiga_invoke.js
 ```
 
@@ -309,10 +310,10 @@ node .\examples\tiga_invoke.js
 
 ```text
 clientId=sample-client
-channelName=SampleChannel
+channelName=sample
 ipcDirectory=C:\Users\Administrator\AppData\Local\Temp\tiga-ipc
-request=SampleChannel.req.sample-client
-response=SampleChannel.resp.sample-client
+request=sample.req.sample-client
+response=sample.resp.sample-client
 invoke reply: Echo response: hello from sample-client
 ```
 
@@ -325,7 +326,7 @@ invoke reply: Echo response: hello from sample-client
 ```powershell
 cd .\csharp\TigaIpc.Server
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 dotnet run -c Release
 ```
 
@@ -342,7 +343,7 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 ```powershell
 $env:TIGA_IPC_CLIENT_ID = 'sample-client'
 $env:TIGA_IPC_DIRECTORY = 'C:\Users\Administrator\AppData\Local\Temp\tiga-ipc'
-$env:TIGA_CHANNEL_NAME = 'SampleChannel'
+$env:TIGA_CHANNEL_NAME = 'sample'
 node .\examples\tiga_invoke.js
 ```
 
@@ -434,7 +435,7 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 优先检查以下三项：
 
 - 两边最终传入的 IPC 目录是否完全一致
-- Node 侧请求通道是否是 `<BaseChannel>.req.<clientId>`
+- Node 侧请求通道是否是 `<channelName>.req.<clientId>`
 - 服务端是否已经以 `Release` 或当前本地可运行配置正常启动
 
 ### 3. 收到的是旧目录里的残留文件
@@ -442,14 +443,14 @@ Copy-Item .\target\release\mmap_napi.dll .\index.node -Force
 切换目录或反复调试后，最容易出现“程序跑起来了，但其实双方没连到同一套映射文件”的问题。最简单的做法是：
 
 - 显式设置统一的 `TIGA_IPC_DIRECTORY`，或在两边传入相同的目录参数
-- 调试前确认该目录下生成的是当前这次运行对应的 `<FilePrefix>_*` 文件
+- 调试前确认该目录下生成的是当前这次运行对应的 `<mappingPrefix>_*` 文件
 
 ### 4. C# 客户端 / Node 客户端并行调试时互相干扰
 
 请确保它们使用不同的 `TIGA_IPC_CLIENT_ID`。否则多个客户端会争用同一组：
 
-- `<BaseChannel>.req.<clientId>`
-- `<BaseChannel>.resp.<clientId>`
+- `<channelName>.req.<clientId>`
+- `<channelName>.resp.<clientId>`
 
 ## 已知注意事项
 
