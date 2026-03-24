@@ -61,8 +61,8 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
                 return false;
             }
 
-            var bus = CreateClientBus(clientId);
-            _clients[clientId] = bus;
+            var channel = CreateClientChannel(clientId);
+            _clients[clientId] = channel;
             return true;
         }
     }
@@ -74,9 +74,9 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
             throw new ArgumentException("Client id must be provided.", nameof(clientId));
         }
 
-        if (_clients.TryRemove(clientId, out var bus))
+        if (_clients.TryRemove(clientId, out var channel))
         {
-            bus.Dispose();
+            channel.Dispose();
             return true;
         }
 
@@ -85,67 +85,67 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
 
     public void Register(string method, Func<object?, string> func)
     {
-        ApplyRegistration(bus => bus.Register(method, func));
+        ApplyRegistration(channel => channel.Register(method, func));
     }
 
     public void RegisterAsync(string method, Func<Task> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public void RegisterAsync(string method, Func<Task<string>> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public void RegisterAsync(string method, Func<object?, Task<string>> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public void RegisterAsync<TIn>(string method, Func<TIn?, CancellationToken, Task<string>> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public void RegisterAsync(string method, Func<object?, CancellationToken, Task<string>> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public void RegisterAsync<TOut>(string method, Func<object?, CancellationToken, Task<TOut>> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public void RegisterAsync<TIn, TOut>(string method, Func<TIn?, CancellationToken, Task<TOut>> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public void RegisterAsync<T>(string method, Func<Task<T>> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public void RegisterAsync<T>(string method, Func<object?, Task<T>> func)
     {
-        ApplyRegistration(bus => bus.RegisterAsync(method, func));
+        ApplyRegistration(channel => channel.RegisterAsync(method, func));
     }
 
     public Task PublishAsync(string message, CancellationToken cancellationToken = default)
     {
-        return PublishToAllAsync(bus => bus.PublishAsync(message, cancellationToken));
+        return PublishToAllAsync(channel => channel.PublishAsync(message, cancellationToken));
     }
 
     public Task PublishAsync(BinaryData message, CancellationToken cancellationToken = default)
     {
-        return PublishToAllAsync(bus => bus.PublishAsync(message, cancellationToken));
+        return PublishToAllAsync(channel => channel.PublishAsync(message, cancellationToken));
     }
 
     public Task PublishAsync(IReadOnlyList<BinaryData> messages, CancellationToken cancellationToken = default)
     {
-        return PublishToAllAsync(bus => bus.PublishAsync(messages, cancellationToken));
+        return PublishToAllAsync(channel => channel.PublishAsync(messages, cancellationToken));
     }
 
     public void Dispose()
@@ -172,13 +172,13 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
             _registrations.Add(registration);
         }
 
-        foreach (var bus in _clients.Values)
+        foreach (var channel in _clients.Values)
         {
-            registration(bus);
+            registration(channel);
         }
     }
 
-    private TigaChannel CreateClientBus(string clientId)
+    private TigaChannel CreateClientChannel(string clientId)
     {
         var requestName = PerClientChannelNames.GetRequestChannelName(_name, clientId);
         var responseName = PerClientChannelNames.GetResponseChannelName(_name, clientId);
@@ -186,7 +186,7 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
         var readFile = TigaMemoryMappedFileFactory.Create(requestName, _mappingType, _options, out _);
         var writeFile = TigaMemoryMappedFileFactory.Create(responseName, _mappingType, _options, out _);
 
-        var bus = new TigaChannel(
+        var channel = new TigaChannel(
             readFile,
             disposeReadFile: true,
             writeFile,
@@ -195,17 +195,17 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
             _options,
             _logger);
 
-        bus.MessageReceived += OnClientMessageReceived;
+        channel.MessageReceived += OnClientMessageReceived;
 
         lock (_registrationLock)
         {
             foreach (var registration in _registrations)
             {
-                registration(bus);
+                registration(channel);
             }
         }
 
-        return bus;
+        return channel;
     }
 
     private void OnClientMessageReceived(object? sender, MessageReceivedEventArgs e)
@@ -263,9 +263,9 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
                     {
                         var added = AddClient(clientId);
                         Console.WriteLine($"[PerClientDiscovery] found={fileName} clientId={clientId} added={added}");
-                        if (added && _clients.TryGetValue(clientId, out var bus))
+                        if (added && _clients.TryGetValue(clientId, out var channel))
                         {
-                            _ = bus.ReadAsync();
+                            _ = channel.ReadAsync();
                         }
                     }
                     catch (Exception ex)
@@ -277,9 +277,9 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
                 // Poll existing clients to avoid missing signals from external writers.
                 if (!_clients.IsEmpty)
                 {
-                    foreach (var bus in _clients.Values)
+                    foreach (var channel in _clients.Values)
                     {
-                        _ = bus.ReadAsync();
+                        _ = channel.ReadAsync();
                     }
                 }
             }
@@ -347,9 +347,9 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
                 }
             }
 
-            foreach (var bus in _clients.Values)
+            foreach (var channel in _clients.Values)
             {
-                bus.Dispose();
+                channel.Dispose();
             }
 
             _clients.Clear();

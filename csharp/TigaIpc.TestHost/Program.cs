@@ -60,13 +60,13 @@ static int PublishBurst(string name, string? countArg)
         MinMessageAge = TimeSpan.FromMilliseconds(100),
     };
 
-    using var bus = new TigaChannel(name, MappingType.Memory, new OptionsWrapper<TigaIpcOptions>(options));
+    using var channel = new TigaChannel(name, MappingType.Memory, new OptionsWrapper<TigaIpcOptions>(options));
     Console.WriteLine("ready");
     Console.Out.Flush();
 
     for (var i = 0; i < count; i++)
     {
-        bus.PublishAsync($"burst-{i}").GetAwaiter().GetResult();
+        channel.PublishAsync($"burst-{i}").GetAwaiter().GetResult();
     }
 
     return 0;

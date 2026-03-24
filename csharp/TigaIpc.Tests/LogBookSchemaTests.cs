@@ -77,7 +77,7 @@ public class LogBookSchemaTests
 
             Assert.Throws<InvalidOperationException>(() =>
             {
-                using var bus =
+                using var channel =
                     new TigaChannel(name, MappingType.File, new OptionsWrapper<TigaIpcOptions>(strictOptions));
             });
         }
