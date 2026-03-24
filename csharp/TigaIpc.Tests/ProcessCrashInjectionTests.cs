@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using TigaIpc.IO;
 using Xunit;
 
 namespace TigaIpc.Tests;

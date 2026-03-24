@@ -1,7 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using TigaIpc.IO;
 using Xunit;
 
 namespace TigaIpc.Tests;

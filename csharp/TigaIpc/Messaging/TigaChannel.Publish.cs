@@ -37,7 +37,7 @@ public partial class TigaChannel
         }
 #endif
         var messager = new PublisherMessage
-            { Id = Guid.NewGuid().ToString(), Protocol = EventProtocol.Publisher, Data = message };
+        { Id = Guid.NewGuid().ToString(), Protocol = EventProtocol.Publisher, Data = message };
         var binary = BinaryDataExtensions.FromObjectAsMessagePack(messager,
             compress: _options.Value.EnableCompression, compressionThreshold: _options.Value.CompressionThreshold);
         return PublishAsync(binary, cancellationToken);

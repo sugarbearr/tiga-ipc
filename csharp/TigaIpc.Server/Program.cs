@@ -2,7 +2,6 @@ using MessagePack;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using System.Runtime.Versioning;
-using TigaIpc;
 using TigaIpc.Core;
 using TigaIpc.Messaging;
 

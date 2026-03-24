@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Options;
-using TigaIpc.IO;
 using TigaIpc.Messaging;
 using Xunit;
 

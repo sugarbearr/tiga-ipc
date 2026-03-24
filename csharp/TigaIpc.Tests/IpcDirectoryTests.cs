@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Options;
 using TigaIpc.Messaging;
-using TigaIpc.IO;
 using Xunit;
 
 namespace TigaIpc.Tests;
