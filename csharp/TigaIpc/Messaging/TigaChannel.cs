@@ -839,6 +839,9 @@ namespace TigaIpc.Messaging
                     Println($"Publishing invoke message for method {invokeMsg.Method} with ID {invokeMsg.Id}");
                 }
 
+                _writeFile.WaitForListenerReady(Timeout.InfiniteTimeSpan, cancellationToken);
+                Println("Remote listener is ready for invoke publish");
+
                 // Waiting to receive mission readiness
                 var timeoutTask = Task.Delay(
                     _options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5),
@@ -1509,6 +1512,11 @@ namespace TigaIpc.Messaging
             public void ReadWrite(Action<MemoryStream, MemoryStream> updateFunc, CancellationToken cancellationToken = default)
             {
                 updateFunc(new MemoryStream(), new MemoryStream());
+            }
+
+            public bool WaitForListenerReady(TimeSpan timeout, CancellationToken cancellationToken = default)
+            {
+                return true;
             }
 
             public void Dispose()

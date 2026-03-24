@@ -156,10 +156,11 @@ public partial class TigaChannel
 
         // create cancellation token source for timeout and user cancellation
         using var timeoutCts = new CancellationTokenSource();
+        timeoutCts.CancelAfter(actualTimeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
         // set timeout
-        var timeoutTask = Task.Delay(actualTimeout, linkedCts.Token);
+        var timeoutTask = Task.Delay(Timeout.InfiniteTimeSpan, linkedCts.Token);
 
         // create response handler
         EventHandler<MessageResponseEventArgs>? handler = null;
@@ -258,7 +259,7 @@ public partial class TigaChannel
             if (completedTask == timeoutTask && !tcs.Task.IsCompleted)
             {
                 // timeout occurred
-                if (timeoutTask.IsCanceled)
+                if (cancellationToken.IsCancellationRequested)
                 {
                     // operation was canceled
                     throw new OperationCanceledException("Operation was canceled", cancellationToken);

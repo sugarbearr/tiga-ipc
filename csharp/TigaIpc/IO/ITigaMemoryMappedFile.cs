@@ -41,5 +41,16 @@ namespace TigaIpc.IO
             Action<MemoryStream, MemoryStream> updateFunc,
             CancellationToken cancellationToken = default
         );
+
+        /// <summary>
+        /// Waits until at least one live listener is registered for this mapping.
+        /// </summary>
+        /// <param name="timeout">Maximum wait duration. Use <see cref="Timeout.InfiniteTimeSpan"/> to wait indefinitely.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns><see langword="true"/> if a live listener became ready before the timeout; otherwise, <see langword="false"/>.</returns>
+        bool WaitForListenerReady(
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default
+        );
     }
 }

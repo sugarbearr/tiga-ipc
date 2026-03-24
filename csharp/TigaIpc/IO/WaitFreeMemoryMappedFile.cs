@@ -592,6 +592,38 @@ public sealed class WaitFreeMemoryMappedFile
         ReadWrite(updateFunc, _readerGraceTimeout, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public bool WaitForListenerReady(
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ThrowIfDisposed();
+
+        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+        }
+
+        if (HasLiveListener())
+        {
+            return true;
+        }
+
+        using var readyHandle = new EventWaitHandle(
+            false,
+            EventResetMode.ManualReset,
+            GetListenerReadyEventName(_notificationEventScope)
+        );
+
+        if (HasLiveListener())
+        {
+            return true;
+        }
+
+        return WaitForListenerReadyCore(readyHandle, timeout, cancellationToken);
+    }
+
     /// <summary>
     /// Reads and then replaces the content of the memory mapped file using a custom grace duration.
     /// </summary>
@@ -1273,6 +1305,49 @@ public sealed class WaitFreeMemoryMappedFile
         {
             handle.Reset();
         }
+    }
+
+    private bool WaitForListenerReadyCore(
+        EventWaitHandle readyHandle,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!cancellationToken.CanBeCanceled)
+        {
+            readyHandle.WaitOne(ToMillisecondsTimeout(timeout));
+            return HasLiveListener();
+        }
+
+        var waitHandles = new WaitHandle[] { readyHandle, cancellationToken.WaitHandle };
+        var result = WaitHandle.WaitAny(waitHandles, ToMillisecondsTimeout(timeout));
+        if (result == 1)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        return HasLiveListener();
+    }
+
+    private static int ToMillisecondsTimeout(TimeSpan timeout)
+    {
+        if (timeout == Timeout.InfiniteTimeSpan)
+        {
+            return Timeout.Infinite;
+        }
+
+        if (timeout <= TimeSpan.Zero)
+        {
+            return 0;
+        }
+
+        var milliseconds = timeout.TotalMilliseconds;
+        if (milliseconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+        }
+
+        return (int)Math.Ceiling(milliseconds);
     }
 
     private static bool IsSameLiveProcess(int processId, long expectedStartTimeUtcTicks)

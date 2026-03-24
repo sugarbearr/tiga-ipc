@@ -38,4 +38,59 @@ public class PerClientTopologyTests
         Assert.Equal("Echo: one", results[0]);
         Assert.Equal("Echo: two", results[1]);
     }
+
+    [Fact]
+    public async Task Invoke_FileBackedClient_WaitsForListenerReadyBeforeFirstRequest()
+    {
+        var name = $"per-client-file-{Guid.NewGuid():N}";
+        var clientId = $"client-{Guid.NewGuid():N}";
+        var ipcDirectory = Path.Combine(Path.GetTempPath(), $"tiga-ipc-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(ipcDirectory);
+
+        var options = new TigaIpcOptions
+        {
+            ChannelName = name,
+            IpcDirectory = ipcDirectory,
+            WaitTimeout = TimeSpan.FromSeconds(1),
+            InvokeTimeout = TimeSpan.FromSeconds(2),
+        };
+        var optionsWrapper = new OptionsWrapper<TigaIpcOptions>(options);
+
+        try
+        {
+            await using var server = new TigaPerClientChannelServer(
+                name,
+                MappingType.File,
+                optionsWrapper);
+            server.Register("method", payload => $"Echo: {payload}");
+
+            await using var client = new TigaChannel(
+                PerClientChannelNames.GetResponseChannelName(name, clientId),
+                PerClientChannelNames.GetRequestChannelName(name, clientId),
+                MappingType.File,
+                optionsWrapper);
+
+            var addClientTask = Task.Run(async () =>
+            {
+                await Task.Delay(300);
+                server.AddClient(clientId);
+            });
+
+            var result = await client.InvokeAsync("method", "first-request", TimeSpan.FromSeconds(2));
+            await addClientTask;
+
+            Assert.Equal("Echo: first-request", result);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(ipcDirectory, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup for temp IPC artifacts.
+            }
+        }
+    }
 }
