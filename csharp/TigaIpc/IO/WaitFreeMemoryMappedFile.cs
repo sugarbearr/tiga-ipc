@@ -624,6 +624,120 @@ public sealed class WaitFreeMemoryMappedFile
         return WaitForListenerReadyCore(readyHandle, timeout, cancellationToken);
     }
 
+    internal static bool HasLiveListener(string name, TigaIpcOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("File must be named", nameof(name));
+        }
+
+        options ??= new TigaIpcOptions();
+        var notificationPath = GetFilePrefix(name, options) + NotificationSuffix;
+        if (!File.Exists(notificationPath))
+        {
+            return false;
+        }
+
+        FileStream? fileStream = null;
+        MemoryMappedFile? mappedFile = null;
+        MemoryMappedViewAccessor? accessor = null;
+        try
+        {
+            fileStream = new FileStream(
+                notificationPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite
+            );
+
+            if (fileStream.Length < Unsafe.SizeOf<NotificationSlot>() * NotificationSlotCount)
+            {
+                return false;
+            }
+
+            mappedFile = MemoryMappedFile.CreateFromFile(
+                fileStream,
+                null,
+                fileStream.Length,
+                MemoryMappedFileAccess.Read,
+                HandleInheritability.None,
+                false
+            );
+            accessor = mappedFile.CreateViewAccessor(
+                0,
+                Unsafe.SizeOf<NotificationSlot>() * NotificationSlotCount,
+                MemoryMappedFileAccess.Read
+            );
+            return HasLiveListener(accessor);
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        finally
+        {
+            accessor?.Dispose();
+            mappedFile?.Dispose();
+            fileStream?.Dispose();
+        }
+    }
+
+    internal static DateTimeOffset? GetLatestArtifactWriteTimeUtc(string name, TigaIpcOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("File must be named", nameof(name));
+        }
+
+        options ??= new TigaIpcOptions();
+
+        DateTimeOffset? latestWriteTimeUtc = null;
+        foreach (var artifactPath in GetFileArtifactPaths(name, options))
+        {
+            if (!File.Exists(artifactPath))
+            {
+                continue;
+            }
+
+            var writeTimeUtc = File.GetLastWriteTimeUtc(artifactPath);
+            if (!latestWriteTimeUtc.HasValue || writeTimeUtc > latestWriteTimeUtc.Value)
+            {
+                latestWriteTimeUtc = writeTimeUtc;
+            }
+        }
+
+        return latestWriteTimeUtc;
+    }
+
+    internal static void DeleteFileArtifacts(string name, TigaIpcOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("File must be named", nameof(name));
+        }
+
+        options ??= new TigaIpcOptions();
+
+        foreach (var artifactPath in GetFileArtifactPaths(name, options))
+        {
+            try
+            {
+                if (File.Exists(artifactPath))
+                {
+                    File.Delete(artifactPath);
+                }
+            }
+            catch (IOException)
+            {
+                // Best-effort cleanup: another process may still be releasing handles.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Best-effort cleanup: retry on the next discovery pass.
+            }
+        }
+    }
+
     /// <summary>
     /// Reads and then replaces the content of the memory mapped file using a custom grace duration.
     /// </summary>
@@ -1146,8 +1260,13 @@ public sealed class WaitFreeMemoryMappedFile
 
     private unsafe bool HasLiveListener()
     {
+        return HasLiveListener(_notificationAccessor);
+    }
+
+    private static unsafe bool HasLiveListener(MemoryMappedViewAccessor notificationAccessor)
+    {
         byte* pointer = null;
-        var handle = _notificationAccessor.SafeMemoryMappedViewHandle;
+        var handle = notificationAccessor.SafeMemoryMappedViewHandle;
         try
         {
             handle.AcquirePointer(ref pointer);
@@ -1264,6 +1383,18 @@ public sealed class WaitFreeMemoryMappedFile
     private static string GetNotificationEventName(string eventScope, int slotIndex)
     {
         return $"{EventPrefix}{eventScope}{NotificationEventSuffix}{slotIndex}";
+    }
+
+    private static string[] GetFileArtifactPaths(string name, TigaIpcOptions options)
+    {
+        var prefix = GetFilePrefix(name, options);
+        return new[]
+        {
+            prefix + StateSuffix,
+            prefix + NotificationSuffix,
+            prefix + DataSuffix0,
+            prefix + DataSuffix1,
+        };
     }
 
     private static string GetListenerReadyEventName(string eventScope)

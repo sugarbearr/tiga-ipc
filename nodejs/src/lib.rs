@@ -9,7 +9,9 @@ mod wyhash_compat;
 
 use napi_derive::napi;
 use tiga::{tiga_invoke_impl, tiga_read_impl, tiga_write_impl};
-use tiga_listener::{create_tiga_notification_listener_impl, TigaNotificationListener};
+use tiga_listener::{
+    create_tiga_notification_listener_impl, tiga_has_live_listener_impl, TigaNotificationListener,
+};
 
 #[napi]
 pub fn initialized() -> String {
@@ -99,4 +101,12 @@ pub fn create_tiga_notification_listener(
     options: Option<TigaChannelOptions>,
 ) -> Result<TigaNotificationListener, napi::Error> {
     create_tiga_notification_listener_impl(name, options)
+}
+
+#[napi(js_name = "tigaHasLiveListener")]
+pub fn tiga_has_live_listener(
+    #[napi(ts_arg_type = "string")] name: String,
+    options: Option<TigaChannelOptions>,
+) -> Result<bool, napi::Error> {
+    tiga_has_live_listener_impl(name, options)
 }

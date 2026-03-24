@@ -1,6 +1,6 @@
 {
   "name": "@tiga-ipc/mmap",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Windows memory-mapped IPC bindings for Tiga channels.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -23,7 +23,7 @@
     "win32"
   ],
   "scripts": {
-    "test": "cargo test",
+    "test": "cargo test && node --test ./runtime/server.test.js",
     "cargo-build": "node ./scripts/build-addon.js",
     "cross-build": "node ./scripts/build-addon.js",
     "debug": "npm run cargo-build --",

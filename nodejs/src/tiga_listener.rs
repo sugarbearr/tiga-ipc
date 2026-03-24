@@ -5,7 +5,7 @@ use napi_derive::napi;
 
 use crate::tiga::common::napi_error;
 use crate::tiga::paths::resolve_tiga_prefix;
-use crate::tiga_notify::NotificationListener;
+use crate::tiga_notify::{has_live_listener, NotificationListener};
 use crate::TigaChannelOptions;
 
 #[napi]
@@ -69,4 +69,19 @@ pub fn create_tiga_notification_listener_impl(
     Ok(TigaNotificationListener {
         inner: Mutex::new(Some(listener)),
     })
+}
+
+pub fn tiga_has_live_listener_impl(
+    name: String,
+    options: Option<TigaChannelOptions>,
+) -> Result<bool, napi::Error> {
+    let prefix = resolve_tiga_prefix(
+        &name,
+        options
+            .as_ref()
+            .and_then(|value| value.ipc_directory.as_deref()),
+    )
+    .map_err(|message| napi_error(&message))?;
+
+    Ok(has_live_listener(&prefix))
 }

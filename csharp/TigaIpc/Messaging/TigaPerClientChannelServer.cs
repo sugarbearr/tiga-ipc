@@ -7,6 +7,8 @@ namespace TigaIpc.Messaging;
 
 public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
 {
+    private static readonly TimeSpan StaleClientArtifactAge = TimeSpan.FromMinutes(5);
+
     private readonly string _name;
     private readonly MappingType _mappingType;
     private readonly IOptions<TigaIpcOptions> _options;
@@ -259,6 +261,11 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
                         continue;
                     }
 
+                    if (TryCleanupStaleClientArtifacts(clientId, optionsValue))
+                    {
+                        continue;
+                    }
+
                     try
                     {
                         var added = AddClient(clientId);
@@ -302,6 +309,96 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
                 break;
             }
         }
+    }
+
+    private bool TryCleanupStaleClientArtifacts(string clientId, TigaIpcOptions optionsValue)
+    {
+        var requestName = PerClientChannelNames.GetRequestChannelName(_name, clientId);
+        var responseName = PerClientChannelNames.GetResponseChannelName(_name, clientId);
+
+        if (_clients.ContainsKey(clientId))
+        {
+            return TryCleanupTrackedClientArtifacts(clientId, requestName, responseName, optionsValue);
+        }
+
+        if (WaitFreeMemoryMappedFile.HasLiveListener(requestName, optionsValue) ||
+            WaitFreeMemoryMappedFile.HasLiveListener(responseName, optionsValue))
+        {
+            return false;
+        }
+
+        if (!IsArtifactGroupStale(requestName, responseName, optionsValue))
+        {
+            return false;
+        }
+
+        DeleteArtifactGroup(requestName, responseName, optionsValue);
+        Console.WriteLine($"[PerClientDiscovery] cleaned stale untracked clientId={clientId}");
+        return true;
+    }
+
+    private bool TryCleanupTrackedClientArtifacts(
+        string clientId,
+        string requestName,
+        string responseName,
+        TigaIpcOptions optionsValue)
+    {
+        if (WaitFreeMemoryMappedFile.HasLiveListener(responseName, optionsValue))
+        {
+            return false;
+        }
+
+        if (!IsArtifactGroupStale(requestName, responseName, optionsValue))
+        {
+            return false;
+        }
+
+        RemoveClient(clientId);
+        DeleteArtifactGroup(requestName, responseName, optionsValue);
+        Console.WriteLine($"[PerClientDiscovery] cleaned stale tracked clientId={clientId}");
+        return true;
+    }
+
+    private bool IsArtifactGroupStale(
+        string requestName,
+        string responseName,
+        TigaIpcOptions optionsValue)
+    {
+        var latestRequestWriteTimeUtc = WaitFreeMemoryMappedFile.GetLatestArtifactWriteTimeUtc(
+            requestName,
+            optionsValue);
+        var latestResponseWriteTimeUtc = WaitFreeMemoryMappedFile.GetLatestArtifactWriteTimeUtc(
+            responseName,
+            optionsValue);
+
+        DateTimeOffset? latestWriteTimeUtc = null;
+        if (latestRequestWriteTimeUtc.HasValue &&
+            (!latestWriteTimeUtc.HasValue || latestRequestWriteTimeUtc > latestWriteTimeUtc))
+        {
+            latestWriteTimeUtc = latestRequestWriteTimeUtc;
+        }
+
+        if (latestResponseWriteTimeUtc.HasValue &&
+            (!latestWriteTimeUtc.HasValue || latestResponseWriteTimeUtc > latestWriteTimeUtc))
+        {
+            latestWriteTimeUtc = latestResponseWriteTimeUtc;
+        }
+
+        if (!latestWriteTimeUtc.HasValue)
+        {
+            return false;
+        }
+
+        return _timeProvider.GetUtcNow() - latestWriteTimeUtc.Value >= StaleClientArtifactAge;
+    }
+
+    private static void DeleteArtifactGroup(
+        string requestName,
+        string responseName,
+        TigaIpcOptions optionsValue)
+    {
+        WaitFreeMemoryMappedFile.DeleteFileArtifacts(requestName, optionsValue);
+        WaitFreeMemoryMappedFile.DeleteFileArtifacts(responseName, optionsValue);
     }
 
     private static bool TryExtractClientId(string fileName, string prefix, string suffix, out string clientId)

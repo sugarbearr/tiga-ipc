@@ -53,6 +53,10 @@ mod imp {
         true
     }
 
+    pub fn has_live_listener(_prefix: &Path) -> io::Result<bool> {
+        Ok(false)
+    }
+
     #[cfg(test)]
     pub(super) fn filetime_ticks_to_datetime_utc_ticks(filetime_ticks: i64) -> i64 {
         filetime_ticks
@@ -78,6 +82,10 @@ pub fn signal_updated(prefix: &Path) -> bool {
 
 pub fn wait_for_listener(prefix: &Path, timeout: Duration) -> bool {
     imp::wait_for_listener(prefix, timeout)
+}
+
+pub fn has_live_listener(prefix: &Path) -> bool {
+    imp::has_live_listener(prefix).unwrap_or(false)
 }
 
 pub(super) fn notification_file_len() -> usize {

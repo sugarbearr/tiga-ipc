@@ -13,10 +13,13 @@ const {
 
 const FILE_PREFIX = 'tiga_';
 const STATE_SUFFIX = '_state';
+const NOTIFY_SUFFIX = '_notify';
+const DATA_SUFFIXES = ['_data_0', '_data_1'];
 const SINGLE_CLIENT_ID = '__single__';
 const DEFAULT_DISCOVERY_INTERVAL_MS = 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = 1000;
 const WORKER_CLOSE_TIMEOUT_MS = 2000;
+const STALE_CLIENT_ARTIFACT_AGE_MS = 5 * 60 * 1000;
 
 const ensureString = (value, label) => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -28,6 +31,14 @@ const ensureString = (value, label) => {
 
 const getStatePath = (ipcDirectory, name) =>
   path.join(ipcDirectory, `${FILE_PREFIX}${name}${STATE_SUFFIX}`);
+
+const getArtifactPaths = (ipcDirectory, name) => [
+  getStatePath(ipcDirectory, name),
+  path.join(ipcDirectory, `${FILE_PREFIX}${name}${NOTIFY_SUFFIX}`),
+  ...DATA_SUFFIXES.map((suffix) =>
+    path.join(ipcDirectory, `${FILE_PREFIX}${name}${suffix}`),
+  ),
+];
 
 const hasSingleChannel = (channelName, ipcDirectory) =>
   fs.existsSync(getStatePath(ipcDirectory, channelName));
@@ -45,6 +56,42 @@ const listClientIds = (channelName, ipcDirectory) => {
       .filter((clientId) => clientId.length > 0);
   } catch {
     return [];
+  }
+};
+
+const getLatestArtifactMtimeMs = (ipcDirectory, name) => {
+  let latestMtimeMs = null;
+  for (const artifactPath of getArtifactPaths(ipcDirectory, name)) {
+    try {
+      const stats = fs.statSync(artifactPath);
+      latestMtimeMs =
+        latestMtimeMs === null
+          ? stats.mtimeMs
+          : Math.max(latestMtimeMs, stats.mtimeMs);
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
+  return latestMtimeMs;
+};
+
+const deleteArtifacts = (ipcDirectory, name) => {
+  for (const artifactPath of getArtifactPaths(ipcDirectory, name)) {
+    try {
+      fs.unlinkSync(artifactPath);
+    } catch (error) {
+      if (
+        !error ||
+        (error.code !== 'ENOENT' &&
+          error.code !== 'EBUSY' &&
+          error.code !== 'EPERM')
+      ) {
+        throw error;
+      }
+    }
   }
 };
 
@@ -141,11 +188,15 @@ class TigaServer {
     }
 
     const nextClients = listClientIds(this.channelName, this.ipcDirectory);
-    nextClients.forEach((clientId) => {
+    for (const clientId of nextClients) {
+      if (await this.tryCleanupStaleClientArtifacts(clientId)) {
+        continue;
+      }
+
       if (!this.clients.has(clientId)) {
         this.registerClient(toClientState(clientId, this.channelName));
       }
-    });
+    }
 
     if (
       !this.clients.has(SINGLE_CLIENT_ID) &&
@@ -169,6 +220,89 @@ class TigaServer {
 
     this.clients.set(state.key, state);
     this.startWorker(state);
+  }
+
+  async removeClient(key) {
+    const client = this.clients.get(key);
+    if (!client) {
+      return false;
+    }
+
+    this.clients.delete(key);
+    await this.closeClient(client);
+    return true;
+  }
+
+  async tryCleanupStaleClientArtifacts(clientId) {
+    const requestName = `${this.channelName}.req.${clientId}`;
+    const responseName = `${this.channelName}.resp.${clientId}`;
+
+    if (this.clients.has(clientId)) {
+      return this.tryCleanupTrackedClientArtifacts(
+        clientId,
+        requestName,
+        responseName,
+      );
+    }
+
+    if (
+      this.hasLiveListener(requestName) ||
+      this.hasLiveListener(responseName)
+    ) {
+      return false;
+    }
+
+    if (!this.isArtifactGroupStale(requestName, responseName)) {
+      return false;
+    }
+
+    this.deleteArtifactGroup(requestName, responseName);
+    return true;
+  }
+
+  async tryCleanupTrackedClientArtifacts(clientId, requestName, responseName) {
+    if (this.hasLiveListener(responseName)) {
+      return false;
+    }
+
+    if (!this.isArtifactGroupStale(requestName, responseName)) {
+      return false;
+    }
+
+    await this.removeClient(clientId);
+    this.deleteArtifactGroup(requestName, responseName);
+    return true;
+  }
+
+  hasLiveListener(name) {
+    return binding.tigaHasLiveListener(name, {
+      ipcDirectory: this.ipcDirectory,
+    });
+  }
+
+  isArtifactGroupStale(requestName, responseName) {
+    const latestRequestMtimeMs = getLatestArtifactMtimeMs(
+      this.ipcDirectory,
+      requestName,
+    );
+    const latestResponseMtimeMs = getLatestArtifactMtimeMs(
+      this.ipcDirectory,
+      responseName,
+    );
+    const latestMtimeMs = [latestRequestMtimeMs, latestResponseMtimeMs]
+      .filter((value) => Number.isFinite(value))
+      .reduce((max, value) => Math.max(max, value), -Infinity);
+
+    if (!Number.isFinite(latestMtimeMs)) {
+      return false;
+    }
+
+    return Date.now() - latestMtimeMs >= STALE_CLIENT_ARTIFACT_AGE_MS;
+  }
+
+  deleteArtifactGroup(requestName, responseName) {
+    deleteArtifacts(this.ipcDirectory, requestName);
+    deleteArtifacts(this.ipcDirectory, responseName);
   }
 
   startWorker(client) {

@@ -32,6 +32,7 @@ export declare function tigaWrite(name: string, message: Buffer | string, option
 export declare function tigaRead(name: string, options?: TigaReadOptions | undefined | null): TigaReadResult
 export declare function tigaInvoke(requestName: string, responseName: string, method: string, data: string, options?: TigaInvokeOptions | undefined | null): string
 export declare function createTigaNotificationListener(name: string, options?: TigaChannelOptions | undefined | null): TigaNotificationListener
+export declare function tigaHasLiveListener(name: string, options?: TigaChannelOptions | undefined | null): boolean
 export declare class TigaNotificationListener {
   wait(timeoutMs?: number): boolean
   close(): void

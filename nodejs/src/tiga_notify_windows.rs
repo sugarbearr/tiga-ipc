@@ -168,7 +168,7 @@ pub fn wait_for_listener(prefix: &Path, timeout: Duration) -> bool {
     signaled && has_live_listener(prefix).unwrap_or(false)
 }
 
-fn has_live_listener(prefix: &Path) -> io::Result<bool> {
+pub fn has_live_listener(prefix: &Path) -> io::Result<bool> {
     let mut map = match open_notification_map(prefix, false) {
         Ok(map) => map,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(false),
