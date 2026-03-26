@@ -7,7 +7,11 @@ namespace TigaIpc.Messaging;
 
 public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
 {
+    // Artifacts older than this with no live listener slot are considered orphans.
     private static readonly TimeSpan StaleClientArtifactAge = TimeSpan.FromMinutes(5);
+
+    // Scavenger runs much less frequently than discovery – it is only for crash-residue cleanup.
+    private static readonly TimeSpan ScavengeInterval = TimeSpan.FromSeconds(30);
 
     private readonly string _name;
     private readonly MappingType _mappingType;
@@ -15,11 +19,13 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
     private readonly ILogger<TigaChannel>? _logger;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, TigaChannel> _clients = new();
+    private readonly HashSet<string> _scavengeClaims = new(StringComparer.Ordinal);
     private readonly List<Action<TigaChannel>> _registrations = new();
     private readonly object _registrationLock = new();
     private readonly object _clientLock = new();
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly Task? _discoveryTask;
+    private readonly Task? _scavengeTask;
     private bool _disposed;
 
     public TigaPerClientChannelServer(
@@ -42,8 +48,29 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
 
         if (_mappingType == MappingType.File)
         {
-            IpcDirectoryHelper.ResolveIpcDirectory(_options.Value ?? new TigaIpcOptions());
+            var optionsValue = _options.Value ?? new TigaIpcOptions();
+            var ipcDirectory = IpcDirectoryHelper.ResolveIpcDirectory(optionsValue);
+            var prefix = $"{IpcDirectoryHelper.FilePrefix}{_name}.req.";
+            var suffix = IpcDirectoryHelper.StateSuffix;
+
+            try
+            {
+                // Startup pre-scavenge only removes aged residue. Fresh artifacts may belong
+                // to a client that is still initializing and has not published its listener yet.
+                ScavengeOnce(
+                    ipcDirectory,
+                    prefix,
+                    suffix,
+                    optionsValue,
+                    aggressiveUntrackedCleanup: true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PerClientScavenge] startup pass failed: {ex.Message}");
+            }
+
             _discoveryTask = Task.Run(DiscoverClientsAsync, _cancellationTokenSource.Token);
+            _scavengeTask = Task.Run(ScavengeOrphanArtifactsAsync, _cancellationTokenSource.Token);
         }
     }
 
@@ -58,7 +85,7 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
 
         lock (_clientLock)
         {
-            if (_clients.ContainsKey(clientId))
+            if (_clients.ContainsKey(clientId) || _scavengeClaims.Contains(clientId))
             {
                 return false;
             }
@@ -76,13 +103,52 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
             throw new ArgumentException("Client id must be provided.", nameof(clientId));
         }
 
-        if (_clients.TryRemove(clientId, out var channel))
+        TigaChannel? channel;
+        lock (_clientLock)
+        {
+            if (!_clients.TryRemove(clientId, out channel))
+            {
+                return false;
+            }
+        }
+
+        if (channel != null)
         {
             channel.Dispose();
             return true;
         }
 
         return false;
+    }
+
+    internal bool IsClientTracked(string clientId)
+    {
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            throw new ArgumentException("Client id must be provided.", nameof(clientId));
+        }
+
+        return _clients.ContainsKey(clientId);
+    }
+
+    internal void RunScavengeOnce(bool aggressiveUntrackedCleanup = false)
+    {
+        if (_mappingType != MappingType.File)
+        {
+            return;
+        }
+
+        var optionsValue = _options.Value ?? new TigaIpcOptions();
+        var ipcDirectory = IpcDirectoryHelper.ResolveIpcDirectory(optionsValue);
+        var prefix = $"{IpcDirectoryHelper.FilePrefix}{_name}.req.";
+        var suffix = IpcDirectoryHelper.StateSuffix;
+
+        ScavengeOnce(
+            ipcDirectory,
+            prefix,
+            suffix,
+            optionsValue,
+            aggressiveUntrackedCleanup);
     }
 
     public void Register(string method, Func<object?, string> func)
@@ -169,14 +235,28 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
             throw new ArgumentNullException(nameof(registration));
         }
 
+        TigaChannel[] channels;
         lock (_registrationLock)
         {
             _registrations.Add(registration);
         }
 
-        foreach (var channel in _clients.Values)
+        channels = _clients.Values.ToArray();
+
+        foreach (var channel in channels)
         {
-            registration(channel);
+            try
+            {
+                registration(channel);
+            }
+            catch (ObjectDisposedException) when (_disposed)
+            {
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                Console.WriteLine("[PerClientRegistration] skipped disposed channel during registration replay");
+            }
         }
     }
 
@@ -261,32 +341,18 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
                         continue;
                     }
 
-                    if (TryCleanupStaleClientArtifacts(clientId, optionsValue))
-                    {
-                        continue;
-                    }
-
                     try
                     {
                         var added = AddClient(clientId);
                         Console.WriteLine($"[PerClientDiscovery] found={fileName} clientId={clientId} added={added}");
                         if (added && _clients.TryGetValue(clientId, out var channel))
                         {
-                            _ = channel.ReadAsync();
+                            await channel.ReadAsync().ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"[PerClientDiscovery] add failed clientId={clientId} error={ex}");
-                    }
-                }
-
-                // Poll existing clients to avoid missing signals from external writers.
-                if (!_clients.IsEmpty)
-                {
-                    foreach (var channel in _clients.Values)
-                    {
-                        _ = channel.ReadAsync();
                     }
                 }
             }
@@ -311,96 +377,6 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
         }
     }
 
-    private bool TryCleanupStaleClientArtifacts(string clientId, TigaIpcOptions optionsValue)
-    {
-        var requestName = PerClientChannelNames.GetRequestChannelName(_name, clientId);
-        var responseName = PerClientChannelNames.GetResponseChannelName(_name, clientId);
-
-        if (_clients.ContainsKey(clientId))
-        {
-            return TryCleanupTrackedClientArtifacts(clientId, requestName, responseName, optionsValue);
-        }
-
-        if (WaitFreeMemoryMappedFile.HasLiveListener(requestName, optionsValue) ||
-            WaitFreeMemoryMappedFile.HasLiveListener(responseName, optionsValue))
-        {
-            return false;
-        }
-
-        if (!IsArtifactGroupStale(requestName, responseName, optionsValue))
-        {
-            return false;
-        }
-
-        DeleteArtifactGroup(requestName, responseName, optionsValue);
-        Console.WriteLine($"[PerClientDiscovery] cleaned stale untracked clientId={clientId}");
-        return true;
-    }
-
-    private bool TryCleanupTrackedClientArtifacts(
-        string clientId,
-        string requestName,
-        string responseName,
-        TigaIpcOptions optionsValue)
-    {
-        if (WaitFreeMemoryMappedFile.HasLiveListener(responseName, optionsValue))
-        {
-            return false;
-        }
-
-        if (!IsArtifactGroupStale(requestName, responseName, optionsValue))
-        {
-            return false;
-        }
-
-        RemoveClient(clientId);
-        DeleteArtifactGroup(requestName, responseName, optionsValue);
-        Console.WriteLine($"[PerClientDiscovery] cleaned stale tracked clientId={clientId}");
-        return true;
-    }
-
-    private bool IsArtifactGroupStale(
-        string requestName,
-        string responseName,
-        TigaIpcOptions optionsValue)
-    {
-        var latestRequestWriteTimeUtc = WaitFreeMemoryMappedFile.GetLatestArtifactWriteTimeUtc(
-            requestName,
-            optionsValue);
-        var latestResponseWriteTimeUtc = WaitFreeMemoryMappedFile.GetLatestArtifactWriteTimeUtc(
-            responseName,
-            optionsValue);
-
-        DateTimeOffset? latestWriteTimeUtc = null;
-        if (latestRequestWriteTimeUtc.HasValue &&
-            (!latestWriteTimeUtc.HasValue || latestRequestWriteTimeUtc > latestWriteTimeUtc))
-        {
-            latestWriteTimeUtc = latestRequestWriteTimeUtc;
-        }
-
-        if (latestResponseWriteTimeUtc.HasValue &&
-            (!latestWriteTimeUtc.HasValue || latestResponseWriteTimeUtc > latestWriteTimeUtc))
-        {
-            latestWriteTimeUtc = latestResponseWriteTimeUtc;
-        }
-
-        if (!latestWriteTimeUtc.HasValue)
-        {
-            return false;
-        }
-
-        return _timeProvider.GetUtcNow() - latestWriteTimeUtc.Value >= StaleClientArtifactAge;
-    }
-
-    private static void DeleteArtifactGroup(
-        string requestName,
-        string responseName,
-        TigaIpcOptions optionsValue)
-    {
-        WaitFreeMemoryMappedFile.DeleteFileArtifacts(requestName, optionsValue);
-        WaitFreeMemoryMappedFile.DeleteFileArtifacts(responseName, optionsValue);
-    }
-
     private static bool TryExtractClientId(string fileName, string prefix, string suffix, out string clientId)
     {
         clientId = string.Empty;
@@ -421,6 +397,260 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
         return !string.IsNullOrWhiteSpace(clientId);
     }
 
+    // ---------------------------------------------------------------------------
+    // Low-frequency orphan scavenger
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Runs every <see cref="ScavengeInterval"/> seconds. For each req.* state file
+    /// found on disk, removes stale artifacts for untracked clients and also evicts
+    /// tracked clients whose response listener is gone.
+    /// </summary>
+    private async Task ScavengeOrphanArtifactsAsync()
+    {
+        var optionsValue = _options.Value ?? new TigaIpcOptions();
+        var ipcDirectory = IpcDirectoryHelper.ResolveIpcDirectory(optionsValue);
+        var prefix = $"{IpcDirectoryHelper.FilePrefix}{_name}.req.";
+        var suffix = IpcDirectoryHelper.StateSuffix;
+
+        while (!_cancellationTokenSource.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(ScavengeInterval, _cancellationTokenSource.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested)
+            {
+                break;
+            }
+
+            try
+            {
+                ScavengeOnce(
+                    ipcDirectory,
+                    prefix,
+                    suffix,
+                    optionsValue,
+                    aggressiveUntrackedCleanup: false);
+            }
+            catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PerClientScavenge] error: {ex.Message}");
+            }
+        }
+    }
+
+    private void ScavengeOnce(
+        string ipcDirectory,
+        string prefix,
+        string suffix,
+        TigaIpcOptions optionsValue,
+        bool aggressiveUntrackedCleanup)
+    {
+        var trackedClientIds = _clients.Keys.ToArray();
+        var initialTrackedClientIds = new HashSet<string>(trackedClientIds, StringComparer.Ordinal);
+        foreach (var clientId in trackedClientIds)
+        {
+            TryScavengeTracked(clientId, optionsValue);
+        }
+
+        foreach (var file in Directory.EnumerateFiles(ipcDirectory, $"{prefix}*{suffix}"))
+        {
+            var fileName = Path.GetFileName(file);
+            if (fileName == null || !TryExtractClientId(fileName, prefix, suffix, out var clientId))
+            {
+                continue;
+            }
+
+            if (initialTrackedClientIds.Contains(clientId))
+            {
+                continue;
+            }
+
+            if (_clients.ContainsKey(clientId))
+            {
+                TryScavengeTracked(clientId, optionsValue);
+                continue;
+            }
+
+            TryScavengeUntracked(clientId, optionsValue, aggressiveUntrackedCleanup);
+        }
+    }
+
+    private void TryScavengeTracked(string clientId, TigaIpcOptions optionsValue)
+    {
+        var requestName = PerClientChannelNames.GetRequestChannelName(_name, clientId);
+        var responseName = PerClientChannelNames.GetResponseChannelName(_name, clientId);
+
+        if (!ShouldScavengeTrackedClient(requestName, responseName, optionsValue))
+        {
+            return;
+        }
+
+        // The server itself owns the request listener for tracked clients, so the
+        // response channel is the signal that the remote client is still alive.
+        if (WaitFreeMemoryMappedFile.HasLiveListenerRaw(responseName, optionsValue))
+        {
+            return;
+        }
+
+        if (!TryBeginScavengeClaim(clientId, requireTrackedClient: true))
+        {
+            return;
+        }
+
+        try
+        {
+            RemoveClient(clientId);
+            WaitFreeMemoryMappedFile.DeleteFileArtifacts(requestName, optionsValue);
+            WaitFreeMemoryMappedFile.DeleteFileArtifacts(responseName, optionsValue);
+            Console.WriteLine($"[PerClientScavenge] removed stale tracked clientId={clientId}");
+        }
+        finally
+        {
+            EndScavengeClaim(clientId);
+        }
+    }
+
+    private void TryScavengeUntracked(
+        string clientId,
+        TigaIpcOptions optionsValue,
+        bool aggressiveUntrackedCleanup)
+    {
+        var requestName = PerClientChannelNames.GetRequestChannelName(_name, clientId);
+        var responseName = PerClientChannelNames.GetResponseChannelName(_name, clientId);
+
+        // Fresh artifact groups may belong to a process that is still starting up and has
+        // not published its listener slot yet. Only scavenge aged residue.
+        if (!IsArtifactGroupStale(requestName, responseName, optionsValue))
+        {
+            return;
+        }
+
+        if (!TryBeginScavengeClaim(clientId, requireTrackedClient: false))
+        {
+            return;
+        }
+
+        try
+        {
+            // Only now do the slightly more expensive raw-byte slot scan (one FileStream open,
+            // no MemoryMappedFile kernel object).  If any live slot exists, skip.
+            if (WaitFreeMemoryMappedFile.HasLiveListenerRaw(responseName, optionsValue) ||
+                WaitFreeMemoryMappedFile.HasLiveListenerRaw(requestName, optionsValue))
+            {
+                return;
+            }
+
+            WaitFreeMemoryMappedFile.DeleteFileArtifacts(requestName, optionsValue);
+            WaitFreeMemoryMappedFile.DeleteFileArtifacts(responseName, optionsValue);
+            Console.WriteLine($"[PerClientScavenge] deleted orphan clientId={clientId}");
+        }
+        finally
+        {
+            EndScavengeClaim(clientId);
+        }
+    }
+
+    private bool ShouldScavengeTrackedClient(
+        string requestName,
+        string responseName,
+        TigaIpcOptions optionsValue)
+    {
+        if (!AnyArtifactExists(requestName, responseName, optionsValue))
+        {
+            Console.WriteLine(
+                $"[PerClientScavenge] tracked client artifacts missing for request={requestName} response={responseName}; preserving channel");
+            return false;
+        }
+
+        return IsArtifactGroupStale(requestName, responseName, optionsValue);
+    }
+
+    private static bool AnyArtifactExists(
+        string requestName,
+        string responseName,
+        TigaIpcOptions optionsValue)
+    {
+        foreach (var name in new[] { requestName, responseName })
+        {
+            foreach (var path in WaitFreeMemoryMappedFile.GetFileArtifactPaths(name, optionsValue))
+            {
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        return true;
+                    }
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryBeginScavengeClaim(string clientId, bool requireTrackedClient)
+    {
+        lock (_clientLock)
+        {
+            if (_scavengeClaims.Contains(clientId))
+            {
+                return false;
+            }
+
+            var isTracked = _clients.ContainsKey(clientId);
+            if (requireTrackedClient ? !isTracked : isTracked)
+            {
+                return false;
+            }
+
+            _scavengeClaims.Add(clientId);
+            return true;
+        }
+    }
+
+    private void EndScavengeClaim(string clientId)
+    {
+        lock (_clientLock)
+        {
+            _scavengeClaims.Remove(clientId);
+        }
+    }
+
+    private bool IsArtifactGroupStale(string requestName, string responseName, TigaIpcOptions optionsValue)
+    {
+        DateTimeOffset? latest = null;
+        foreach (var name in new[] { requestName, responseName })
+        {
+            foreach (var path in WaitFreeMemoryMappedFile.GetFileArtifactPaths(name, optionsValue))
+            {
+                try
+                {
+                    var t = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+                    if (!latest.HasValue || t > latest.Value)
+                    {
+                        latest = t;
+                    }
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+
+        if (!latest.HasValue)
+        {
+            return false;
+        }
+
+        return _timeProvider.GetUtcNow() - latest.Value >= StaleClientArtifactAge;
+    }
+
     private void Dispose(bool disposing)
     {
         if (_disposed)
@@ -433,14 +663,17 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
 
         if (disposing)
         {
-            if (_discoveryTask != null)
+            foreach (var task in new[] { _discoveryTask, _scavengeTask })
             {
-                try
+                if (task != null)
                 {
-                    _discoveryTask.Wait(_options.Value.WaitTimeout);
-                }
-                catch
-                {
+                    try
+                    {
+                        task.Wait(_options.Value.WaitTimeout);
+                    }
+                    catch
+                    {
+                    }
                 }
             }
 
@@ -466,14 +699,17 @@ public sealed class TigaPerClientChannelServer : IDisposable, IAsyncDisposable
 
         if (disposing)
         {
-            if (_discoveryTask != null)
+            foreach (var task in new[] { _discoveryTask, _scavengeTask })
             {
-                try
+                if (task != null)
                 {
-                    await _discoveryTask.ConfigureAwait(false);
-                }
-                catch
-                {
+                    try
+                    {
+                        await task.ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                    }
                 }
             }
 

@@ -29,16 +29,7 @@ public partial class TigaChannel
 #endif
 
         var response = await InternalInvokeAsync(method, data, timeout, cancellationToken);
-
-        // parse the response
-        var responseData = response.ToObjectFromMessagePack<ResponseMessage>();
-        if (responseData == null)
-        {
-            throw new InvalidOperationException(
-                $"Invalid response received for method '{method}', response data is null");
-        }
-
-        return responseData.Data;
+        return response.Data;
     }
 
     /// <inheritdoc/>
@@ -128,7 +119,7 @@ public partial class TigaChannel
     /// <param name="data">data</param>
     /// <param name="timeout">timeout</param>
     /// <param name="cancellationToken">cancellation token</param>
-    private async Task<BinaryData> InternalInvokeAsync(string method, object? data, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    private async Task<ResponseMessage> InternalInvokeAsync(string method, object? data, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
 #if NET7_0_OR_GREATER
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -149,92 +140,15 @@ public partial class TigaChannel
         // generate unique request ID
         var requestId = Guid.NewGuid().ToString();
         Println($"Starting invoke for method {method} with request ID {requestId}");
-
-        // create task completion source and timeout handler
-        var tcs = new TaskCompletionSource<BinaryData>();
         var actualTimeout = timeout ?? _options.Value.InvokeTimeout;
-
-        // create cancellation token source for timeout and user cancellation
-        using var timeoutCts = new CancellationTokenSource();
-        timeoutCts.CancelAfter(actualTimeout);
+        var responseTaskSource = new TaskCompletionSource<ResponseMessage>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timeoutCts = new CancellationTokenSource(actualTimeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-        // set timeout
         var timeoutTask = Task.Delay(Timeout.InfiniteTimeSpan, linkedCts.Token);
-
-        // create response handler
-        EventHandler<MessageResponseEventArgs>? handler = null;
-        handler = (sender, e) =>
-        {
-            try
-            {
-                // try to parse message as response message
-                if (!e.Message.TryToObject<ResponseMessage>(out var response))
-                {
-                    Println(
-                        $"Received message is not a valid response format for request ID {requestId}");
-                    return; // not the expected response format, ignore
-                }
-
-                // check if response ID matches
-                if (response?.Id != requestId)
-                {
-                    Println(
-                        $"Received response ID {response?.Id} does not match request ID {requestId}");
-                    return; // not the expected response ID, ignore
-                }
-
-                // unsubscribe event and set result
-                MessageResponse -= handler;
-                tcs.TrySetResult(e.Message);
-
-                // cancel timeout task
-                try
-                {
-                    // Check if the CancellationTokenSource is not disposed before calling Cancel
-                    if (timeoutCts is { IsCancellationRequested: false, Token.CanBeCanceled: true })
-                    {
-                        timeoutCts.Cancel();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    PrintFailed(ex, "Error canceling timeout");
-                }
-
-                Println($"Successfully received response for method {method} with request ID {requestId}");
-            }
-            catch (Exception ex)
-            {
-                // handle exception when processing response
-                MessageResponse -= handler;
-                tcs.TrySetException(ex);
-                PrintFailed(
-                    ex,
-                    $"[InvokeAsync] Error processing response for method {method} with request ID {requestId}");
-            }
-        };
-
-        // register timeout handler
-        var timeoutRegistration = timeoutCts.Token.Register(() =>
-        {
-            if (handler != null)
-            {
-                MessageResponse -= handler;
-                var timeoutException = new TimeoutException(
-                    $"Waiting for response timeout for method '{method}', waited {actualTimeout.TotalSeconds} seconds");
-                tcs.TrySetException(timeoutException);
-                PrintWarn(
-                    $"Request timed out for method {method} with request ID {requestId} after {actualTimeout.TotalSeconds} seconds");
-            }
-        });
-
-        // subscribe to response event
-        MessageResponse += handler;
 
         try
         {
-            // create request message
             var requestMessage = new InvokeMessage
             {
                 Id = requestId,
@@ -243,55 +157,53 @@ public partial class TigaChannel
                 Data = data,
             };
 
-            // use compression to reduce data transfer, according to configuration decide whether to compress
+            if (!_pendingResponses.TryAdd(requestId, responseTaskSource))
+            {
+                throw new InvalidOperationException(
+                    $"A pending response with ID '{requestId}' is already registered.");
+            }
+
             var requestBinary = BinaryDataExtensions.FromObjectAsMessagePack(
                 requestMessage,
                 compress: _options.Value.EnableCompression,
                 compressionThreshold: _options.Value.CompressionThreshold);
 
-            // publish request directly, avoid using normal publish queue
             await PublishInvokeMessageAsync(requestBinary, linkedCts.Token).ConfigureAwait(false);
             Println($"Successfully published invoke request for method {method} with request ID {requestId}");
 
-            // wait for response or timeout
-            var completedTask = await Task.WhenAny(tcs.Task, timeoutTask).ConfigureAwait(false);
-
-            if (completedTask == timeoutTask && !tcs.Task.IsCompleted)
+            var completedTask = await Task.WhenAny(responseTaskSource.Task, timeoutTask).ConfigureAwait(false);
+            if (completedTask != responseTaskSource.Task)
             {
-                // timeout occurred
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    // operation was canceled
                     throw new OperationCanceledException("Operation was canceled", cancellationToken);
                 }
-                else
-                {
-                    // timeout
-                    throw new TimeoutException(
-                        $"Waiting for response timeout for method '{method}', waited {actualTimeout.TotalSeconds} seconds");
-                }
+
+                throw new TimeoutException(
+                    $"Waiting for response timeout for method '{method}', waited {actualTimeout.TotalSeconds} seconds");
             }
 
-            // return result
-            return await tcs.Task.ConfigureAwait(false);
+            var responseMessage = await responseTaskSource.Task
+                .ConfigureAwait(false);
+
+            if (responseMessage.Code != ResponseCode.Successful)
+            {
+                throw new InvalidOperationException(
+                    $"Error response received for method '{method}': {responseMessage.Data}");
+            }
+
+            return responseMessage;
         }
         catch (Exception ex) when (ex is not TimeoutException && ex is not OperationCanceledException)
         {
-            // clear event handler
-            if (handler != null)
-            {
-                MessageResponse -= handler;
-            }
-
+            _pendingResponses.TryRemove(requestId, out _);
             PrintFailed(ex, $"[InvokeAsync] Error invoking method {method} with request ID {requestId}");
 
-            // wrap exception to provide more context
             throw new InvalidOperationException($"Error invoking method '{method}': {ex.Message}", ex);
         }
         finally
         {
-            // dispose resources
-            timeoutRegistration.Dispose();
+            _pendingResponses.TryRemove(requestId, out _);
 
             try
             {
@@ -299,7 +211,7 @@ public partial class TigaChannel
             }
             catch
             {
-                /* ignore cancel exception */
+                // Ignore timeout CTS cancellation during cleanup.
             }
         }
     }

@@ -63,34 +63,36 @@ const createServer = (binding, options = {}) => {
   return server;
 };
 
-test('discover removes stale untracked per-client artifacts', async () => {
-  const ipcDirectory = createTempDirectory();
-  const channelName = `sample-${Date.now()}`;
-  const clientId = 'client-a';
-  const requestName = `${channelName}.req.${clientId}`;
-  const responseName = `${channelName}.resp.${clientId}`;
-  const oldMtimeMs = Date.now() - 10 * 60 * 1000;
+test(
+  'initial scavenge removes fresh untracked per-client artifacts',
+  async () => {
+    const ipcDirectory = createTempDirectory();
+    const channelName = `sample-${Date.now()}`;
+    const clientId = 'client-a';
+    const requestName = `${channelName}.req.${clientId}`;
+    const responseName = `${channelName}.resp.${clientId}`;
 
-  try {
-    createArtifacts(ipcDirectory, requestName, oldMtimeMs);
-    createArtifacts(ipcDirectory, responseName, oldMtimeMs);
+    try {
+      createArtifacts(ipcDirectory, requestName, Date.now());
+      createArtifacts(ipcDirectory, responseName, Date.now());
 
-    const binding = {
-      tigaHasLiveListener() {
-        return false;
-      },
-    };
-    const server = createServer(binding, { channelName, ipcDirectory });
+      const binding = {
+        tigaHasLiveListener() {
+          return false;
+        },
+      };
+      const server = createServer(binding, { channelName, ipcDirectory });
 
-    await server.discover();
+      await server.ensureInitialScavenge();
 
-    assert.equal(anyArtifactsExist(ipcDirectory, requestName), false);
-    assert.equal(anyArtifactsExist(ipcDirectory, responseName), false);
-    assert.equal(server.clients.size, 0);
-  } finally {
-    fs.rmSync(ipcDirectory, { recursive: true, force: true });
-  }
-});
+      assert.equal(anyArtifactsExist(ipcDirectory, requestName), false);
+      assert.equal(anyArtifactsExist(ipcDirectory, responseName), false);
+      assert.equal(server.clients.size, 0);
+    } finally {
+      fs.rmSync(ipcDirectory, { recursive: true, force: true });
+    }
+  },
+);
 
 test('discover preserves active per-client artifacts and registers the client', async () => {
   const ipcDirectory = createTempDirectory();
@@ -121,7 +123,7 @@ test('discover preserves active per-client artifacts and registers the client', 
   }
 });
 
-test('discover removes stale tracked clients after response listener disappears', async () => {
+test('scavenge removes stale tracked clients after response listener disappears', async () => {
   const ipcDirectory = createTempDirectory();
   const channelName = `sample-${Date.now()}`;
   const clientId = 'client-c';
@@ -152,12 +154,120 @@ test('discover removes stale tracked clients after response listener disappears'
       responseName,
     });
 
-    await server.discover();
+    await server.scavengeOnce();
 
     assert.equal(closedCount, 1);
     assert.equal(server.clients.has(clientId), false);
     assert.equal(anyArtifactsExist(ipcDirectory, requestName), false);
     assert.equal(anyArtifactsExist(ipcDirectory, responseName), false);
+  } finally {
+    fs.rmSync(ipcDirectory, { recursive: true, force: true });
+  }
+});
+
+test('scavenge removes tracked clients whose artifacts are already missing', async () => {
+  const ipcDirectory = createTempDirectory();
+  const channelName = `sample-${Date.now()}`;
+  const clientId = 'client-d';
+  const requestName = `${channelName}.req.${clientId}`;
+  const responseName = `${channelName}.resp.${clientId}`;
+
+  try {
+    const binding = {
+      tigaHasLiveListener() {
+        return false;
+      },
+    };
+    const server = createServer(binding, { channelName, ipcDirectory });
+    server.closeClient = async (client) => {
+      client.closing = true;
+    };
+
+    server.registerClient({
+      key: clientId,
+      clientId,
+      requestName,
+      responseName,
+    });
+
+    await server.scavengeOnce();
+
+    assert.equal(server.clients.has(clientId), false);
+  } finally {
+    fs.rmSync(ipcDirectory, { recursive: true, force: true });
+  }
+});
+
+test('scavenge claim blocks re-registering a tracked client mid-cleanup', async () => {
+  const ipcDirectory = createTempDirectory();
+  const channelName = `sample-${Date.now()}`;
+  const clientId = 'client-e';
+  const requestName = `${channelName}.req.${clientId}`;
+  const responseName = `${channelName}.resp.${clientId}`;
+  const oldMtimeMs = Date.now() - 10 * 60 * 1000;
+
+  try {
+    createArtifacts(ipcDirectory, requestName, oldMtimeMs);
+    createArtifacts(ipcDirectory, responseName, oldMtimeMs);
+
+    const binding = {
+      tigaHasLiveListener() {
+        return false;
+      },
+    };
+    const server = createServer(binding, { channelName, ipcDirectory });
+    let reRegisterBlocked = 0;
+    server.closeClient = async (client) => {
+      client.closing = true;
+      const added = server.registerClient({
+        key: clientId,
+        clientId,
+        requestName,
+        responseName,
+      });
+      assert.equal(added, false);
+      reRegisterBlocked += 1;
+    };
+
+    server.registerClient({
+      key: clientId,
+      clientId,
+      requestName,
+      responseName,
+    });
+
+    await server.scavengeOnce();
+
+    assert.equal(reRegisterBlocked, 1);
+    assert.equal(server.clients.has(clientId), false);
+    assert.equal(anyArtifactsExist(ipcDirectory, requestName), false);
+    assert.equal(anyArtifactsExist(ipcDirectory, responseName), false);
+  } finally {
+    fs.rmSync(ipcDirectory, { recursive: true, force: true });
+  }
+});
+
+test('initial scavenge failure is not retried on later ensure calls', async () => {
+  const ipcDirectory = createTempDirectory();
+
+  try {
+    const binding = {
+      tigaHasLiveListener() {
+        return false;
+      },
+    };
+    const server = createServer(binding, { ipcDirectory });
+    let attempts = 0;
+    server.scavengeOnce = async () => {
+      attempts += 1;
+      throw new Error('boom');
+    };
+
+    await assert.rejects(server.ensureInitialScavenge(), /boom/);
+    await server.ensureInitialScavenge();
+    await server.discover();
+
+    assert.equal(attempts, 1);
   } finally {
     fs.rmSync(ipcDirectory, { recursive: true, force: true });
   }

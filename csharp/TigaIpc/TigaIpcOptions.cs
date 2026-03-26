@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using System.IO;
 using System.IO.MemoryMappedFiles;
 using TigaIpc.IO;
 
@@ -22,7 +22,8 @@ namespace TigaIpc
         /// <summary>
         /// Gets or sets the logical channel name for this IPC topology, default value is process name.
         /// </summary>
-        public string ChannelName { get; set; } = Process.GetCurrentProcess().ProcessName;
+        public string ChannelName { get; set; } =
+            Path.GetFileNameWithoutExtension(Environment.ProcessPath) ?? "unknown";
 
         /// <summary>
         /// Gets or sets the maximum amount of data that can be written to the file memory mapped file, default is 1 MiB

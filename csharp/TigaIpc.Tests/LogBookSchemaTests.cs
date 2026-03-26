@@ -1,5 +1,9 @@
+using System.Collections.Immutable;
+using System.Runtime.ExceptionServices;
+using System.Threading;
 using MessagePack;
 using Microsoft.Extensions.Options;
+using TigaIpc.IO;
 using TigaIpc.Messaging;
 using Xunit;
 
@@ -82,9 +86,105 @@ public class LogBookSchemaTests
         }
         finally
         {
-            if (Directory.Exists(ipcDirectory))
+            TryDeleteDirectory(ipcDirectory);
+        }
+    }
+
+    [Fact]
+    public void LogBookSchemaVersion_LegacyPayloadOpensWithoutFirstChanceMessagePackException()
+    {
+        var name = "schema_legacy_probe_" + Guid.NewGuid().ToString("N");
+        var ipcDirectory = Path.Combine(Path.GetTempPath(), "tiga-ipc-schema-" + Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(ipcDirectory);
+
+        try
+        {
+            var legacyOptions = new TigaIpcOptions
             {
-                Directory.Delete(ipcDirectory, true);
+                ChannelName = name,
+                LogBookSchemaVersion = 1,
+                IpcDirectory = ipcDirectory,
+            };
+
+            using (var legacyFile = new WaitFreeMemoryMappedFile(name, MappingType.File, legacyOptions))
+            {
+                var logBook = new LogBook(
+                    14,
+                    ImmutableList.Create(
+                        new LogEntry(13, Guid.NewGuid(), 1, new byte[] { 0x01 }, "application/octet-stream"),
+                        new LogEntry(14, Guid.NewGuid(), 2, new byte[] { 0x02 }, "application/octet-stream")
+                    )
+                );
+
+                using var stream = new MemoryStream();
+                MessagePackSerializer.Serialize(stream, logBook);
+                stream.Seek(0, SeekOrigin.Begin);
+                legacyFile.Write(stream);
+            }
+
+            var consumerOptions = new TigaIpcOptions
+            {
+                ChannelName = name,
+                LogBookSchemaVersion = 1,
+                AllowLegacyLogBook = true,
+                IpcDirectory = ipcDirectory,
+            };
+
+            var firstChanceMessagePackExceptions = 0;
+            void OnFirstChanceException(object? _, FirstChanceExceptionEventArgs args)
+            {
+                if (args.Exception is MessagePackSerializationException)
+                {
+                    Interlocked.Increment(ref firstChanceMessagePackExceptions);
+                }
+            }
+
+            AppDomain.CurrentDomain.FirstChanceException += OnFirstChanceException;
+            try
+            {
+                using var channel =
+                    new TigaChannel(name, MappingType.File, new OptionsWrapper<TigaIpcOptions>(consumerOptions));
+            }
+            finally
+            {
+                AppDomain.CurrentDomain.FirstChanceException -= OnFirstChanceException;
+            }
+
+            Assert.Equal(0, firstChanceMessagePackExceptions);
+        }
+        finally
+        {
+            TryDeleteDirectory(ipcDirectory);
+        }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        while (true)
+        {
+            try
+            {
+                if (!Directory.Exists(path))
+                {
+                    return;
+                }
+
+                Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (IOException) when (DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(50);
+            }
+            catch (UnauthorizedAccessException) when (DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(50);
+            }
+            catch
+            {
+                return;
             }
         }
     }

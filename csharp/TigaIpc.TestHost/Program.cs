@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using TigaIpc;
 using TigaIpc.Messaging;
 using TigaIpc.IO;
@@ -24,6 +25,8 @@ internal class Program
                 return PublishBurst(name, args.Length > 2 ? args[2] : null);
             case "hold-single-writer-lock":
                 return HoldSingleWriterLock(name);
+            case "crash-per-client-file":
+                return CrashPerClientFile(name, args.Length > 2 ? args[2] : null, args.Length > 3 ? args[3] : null);
             default:
                 Console.Error.WriteLine("Unknown command");
                 return 2;
@@ -89,6 +92,33 @@ internal class Program
             Console.WriteLine("ready");
             Console.Out.Flush();
             Thread.Sleep(5000);
+            return 0;
+        }
+
+        static int CrashPerClientFile(string channelName, string? clientId, string? ipcDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(ipcDirectory))
+            {
+                Console.Error.WriteLine("Usage: crash-per-client-file <channelName> <clientId> <ipcDirectory>");
+                return 1;
+            }
+
+            var requestName = PerClientChannelNames.GetRequestChannelName(channelName, clientId);
+            var responseName = PerClientChannelNames.GetResponseChannelName(channelName, clientId);
+            var options = new TigaIpcOptions
+            {
+                ChannelName = channelName,
+                IpcDirectory = ipcDirectory,
+                WaitTimeout = TimeSpan.FromSeconds(2),
+                InvokeTimeout = TimeSpan.FromSeconds(5),
+                MinMessageAge = TimeSpan.FromMilliseconds(100),
+            };
+
+            _ = new TigaChannel(responseName, requestName, MappingType.File, new OptionsWrapper<TigaIpcOptions>(options));
+            Console.WriteLine("ready");
+            Console.Out.Flush();
+            Thread.Sleep(500);
+            Process.GetCurrentProcess().Kill(true);
             return 0;
         }
     }

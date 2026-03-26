@@ -110,6 +110,8 @@ const toClientState = (clientId, channelName) =>
         responseName: `${channelName}.resp.${clientId}`,
       };
 
+const SCAVENGE_INTERVAL_MS = 30 * 1000;
+
 class TigaServer {
   constructor(options) {
     const resolved = options || {};
@@ -132,7 +134,13 @@ class TigaServer {
     );
 
     this.clients = new Map();
+    this.scavengeClaims = new Set();
     this.discoveryTimer = null;
+    this.scavengeTimer = null;
+    this.scavenging = false;
+    this.initialScavengeCompleted = false;
+    this.initialScavengeAttempted = false;
+    this.initialScavengePromise = null;
     this.closed = false;
     this.started = false;
   }
@@ -145,6 +153,13 @@ class TigaServer {
     fs.mkdirSync(this.ipcDirectory, { recursive: true });
     this.started = true;
     this.closed = false;
+    void this.ensureInitialScavenge().catch((error) => {
+      this.reportError(error, {
+        stage: 'scavenge-initial',
+        channelName: this.channelName,
+        ipcDirectory: this.ipcDirectory,
+      });
+    });
     this.discoveryTimer = setInterval(() => {
       this.discover().catch((error) => {
         this.reportError(error, {
@@ -162,6 +177,18 @@ class TigaServer {
       });
     });
 
+    // Low-frequency scavenger: runs every SCAVENGE_INTERVAL_MS, cleans up
+    // orphaned artifacts from crashed clients without touching the discovery path.
+    this.scavengeTimer = setInterval(() => {
+      this.runBackgroundScavenge().catch((error) => {
+        this.reportError(error, {
+          stage: 'scavenge',
+          channelName: this.channelName,
+          ipcDirectory: this.ipcDirectory,
+        });
+      });
+    }, SCAVENGE_INTERVAL_MS);
+
     return this;
   }
 
@@ -177,6 +204,11 @@ class TigaServer {
       this.discoveryTimer = null;
     }
 
+    if (this.scavengeTimer) {
+      clearInterval(this.scavengeTimer);
+      this.scavengeTimer = null;
+    }
+
     const clients = Array.from(this.clients.values());
     this.clients.clear();
     await Promise.all(clients.map((client) => this.closeClient(client)));
@@ -187,12 +219,11 @@ class TigaServer {
       return;
     }
 
+    await this.ensureInitialScavenge();
+
     const nextClients = listClientIds(this.channelName, this.ipcDirectory);
     for (const clientId of nextClients) {
-      if (await this.tryCleanupStaleClientArtifacts(clientId)) {
-        continue;
-      }
-
+      // Discovery only registers — cleanup is handled by the low-frequency scavenger.
       if (!this.clients.has(clientId)) {
         this.registerClient(toClientState(clientId, this.channelName));
       }
@@ -207,6 +238,10 @@ class TigaServer {
   }
 
   registerClient(client) {
+    if (this.clients.has(client.key) || this.scavengeClaims.has(client.key)) {
+      return false;
+    }
+
     const state = {
       ...client,
       lastId: 0,
@@ -220,6 +255,7 @@ class TigaServer {
 
     this.clients.set(state.key, state);
     this.startWorker(state);
+    return true;
   }
 
   async removeClient(key) {
@@ -233,51 +269,177 @@ class TigaServer {
     return true;
   }
 
-  async tryCleanupStaleClientArtifacts(clientId) {
-    const requestName = `${this.channelName}.req.${clientId}`;
-    const responseName = `${this.channelName}.resp.${clientId}`;
+  /**
+   * Runs exactly once before discovery starts tracking on-disk clients, so
+   * stale crash residue is deleted instead of being re-registered.
+   */
+  async ensureInitialScavenge() {
+    if (
+      this.initialScavengeCompleted ||
+      (this.initialScavengeAttempted && !this.initialScavengePromise)
+    ) {
+      return;
+    }
 
-    if (this.clients.has(clientId)) {
-      return this.tryCleanupTrackedClientArtifacts(
-        clientId,
-        requestName,
-        responseName,
-      );
+    if (!this.initialScavengePromise) {
+      this.initialScavengePromise = this.scavengeOnce({
+        aggressiveUntrackedCleanup: true,
+      })
+        .then(() => {
+          this.initialScavengeCompleted = true;
+        })
+        .finally(() => {
+          this.initialScavengeAttempted = true;
+          this.initialScavengePromise = null;
+        });
+    }
+
+    await this.initialScavengePromise;
+  }
+
+  async runBackgroundScavenge() {
+    if (this.closed || this.scavenging) {
+      return;
+    }
+
+    this.scavenging = true;
+    try {
+      await this.scavengeOnce();
+    } finally {
+      this.scavenging = false;
+    }
+  }
+
+  /**
+   * Low-frequency scavenger: scans all req.* state files on disk, removes stale
+   * untracked artifacts, and also evicts tracked clients whose response
+   * listener has disappeared.
+   */
+  async scavengeOnce({ aggressiveUntrackedCleanup = false } = {}) {
+    if (this.closed) {
+      return;
+    }
+
+    const trackedClients = Array.from(this.clients.values()).filter(
+      (client) => client.key !== SINGLE_CLIENT_ID,
+    );
+    for (const client of trackedClients) {
+      await this.scavengeTrackedClient(client);
+    }
+
+    const clientIds = listClientIds(this.channelName, this.ipcDirectory);
+    for (const clientId of clientIds) {
+      const requestName = `${this.channelName}.req.${clientId}`;
+      const responseName = `${this.channelName}.resp.${clientId}`;
+
+      if (this.clients.has(clientId)) {
+        continue;
+      }
+
+      // Startup scavenging runs before discovery tracks on-disk clients, so
+      // dead residue can be removed immediately. The periodic scavenger stays
+      // conservative and still waits for the stale-age window.
+      if (
+        !aggressiveUntrackedCleanup &&
+        !this.isArtifactGroupStale(requestName, responseName)
+      ) {
+        continue;
+      }
+
+      if (!this.tryBeginScavengeClaim(clientId, false)) {
+        continue;
+      }
+
+      try {
+        // Slightly more expensive: raw notify-file slot scan (one FileStream
+        // read, no MemoryMappedFile, no kernel section object).
+        if (
+          this.hasLiveListener(requestName) ||
+          this.hasLiveListener(responseName)
+        ) {
+          continue;
+        }
+
+        this.deleteArtifactGroup(requestName, responseName);
+      } finally {
+        this.endScavengeClaim(clientId);
+      }
+    }
+  }
+
+  async scavengeTrackedClient(client) {
+    if (!client || client.key === SINGLE_CLIENT_ID) {
+      return;
     }
 
     if (
-      this.hasLiveListener(requestName) ||
-      this.hasLiveListener(responseName)
+      !this.shouldScavengeTrackedClient(client.requestName, client.responseName)
     ) {
-      return false;
+      return;
     }
 
-    if (!this.isArtifactGroupStale(requestName, responseName)) {
-      return false;
+    // The server owns the request listener for tracked clients, so the
+    // response listener is the remote liveness signal.
+    if (this.hasLiveListener(client.responseName)) {
+      return;
     }
 
-    this.deleteArtifactGroup(requestName, responseName);
-    return true;
-  }
-
-  async tryCleanupTrackedClientArtifacts(clientId, requestName, responseName) {
-    if (this.hasLiveListener(responseName)) {
-      return false;
+    if (!this.tryBeginScavengeClaim(client.key, true)) {
+      return;
     }
 
-    if (!this.isArtifactGroupStale(requestName, responseName)) {
-      return false;
+    try {
+      await this.removeClient(client.key);
+      this.deleteArtifactGroup(client.requestName, client.responseName);
+    } finally {
+      this.endScavengeClaim(client.key);
     }
-
-    await this.removeClient(clientId);
-    this.deleteArtifactGroup(requestName, responseName);
-    return true;
   }
 
   hasLiveListener(name) {
     return binding.tigaHasLiveListener(name, {
       ipcDirectory: this.ipcDirectory,
     });
+  }
+
+  shouldScavengeTrackedClient(requestName, responseName) {
+    if (!this.anyArtifactGroupExists(requestName, responseName)) {
+      return true;
+    }
+
+    return this.isArtifactGroupStale(requestName, responseName);
+  }
+
+  anyArtifactGroupExists(requestName, responseName) {
+    for (const name of [requestName, responseName]) {
+      if (
+        getArtifactPaths(this.ipcDirectory, name).some((artifactPath) =>
+          fs.existsSync(artifactPath),
+        )
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  tryBeginScavengeClaim(clientId, requireTrackedClient) {
+    if (this.scavengeClaims.has(clientId)) {
+      return false;
+    }
+
+    const isTracked = this.clients.has(clientId);
+    if (requireTrackedClient ? !isTracked : isTracked) {
+      return false;
+    }
+
+    this.scavengeClaims.add(clientId);
+    return true;
+  }
+
+  endScavengeClaim(clientId) {
+    this.scavengeClaims.delete(clientId);
   }
 
   isArtifactGroupStale(requestName, responseName) {

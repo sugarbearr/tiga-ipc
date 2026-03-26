@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Diagnostics;
@@ -422,6 +423,8 @@ namespace TigaIpc.Messaging
             {
                 try
                 {
+                    var waitTimeout = _options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5);
+
                     // cancel event
                     _readFile.FileUpdated -= WhenFileUpdated;
 
@@ -429,10 +432,6 @@ namespace TigaIpc.Messaging
                     _cancellationTokenSource.Cancel();
 
                     _disposed = true;
-
-                    // release semaphore and queue resources
-                    _invokeMessageLock?.Dispose();
-                    _publishMessageSemaphore?.Dispose();
 #if NET
                     _pendingInvokeMessages.Clear();
 #endif
@@ -440,7 +439,7 @@ namespace TigaIpc.Messaging
                     // Complete all receive channels
                     foreach (var receiverChannel in _receiverChannels)
                     {
-                        receiverChannel.Value.Writer.Complete();
+                        receiverChannel.Value.Writer.TryComplete();
                     }
 
                     // Waiting to receive task completion
@@ -449,7 +448,7 @@ namespace TigaIpc.Messaging
                         if (_receiverTask != null)
                         {
                             // Use timeout waits to avoid blocking indefinitely
-                            if (!_receiverTask.Wait(_options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5)))
+                            if (!_receiverTask.Wait(waitTimeout))
                             {
                                 Println("Receiver task did not complete within timeout during disposal");
                             }
@@ -466,16 +465,17 @@ namespace TigaIpc.Messaging
 
                     // Handling memory-mapped files
                     var sameFile = ReferenceEquals(_readFile, _writeFile);
+                    var readerSemaphoreHeld = false;
 
                     if (_disposeReadFile)
                     {
-                        if (_messageReaderSemaphore != null &&
-                            !_messageReaderSemaphore.Wait(_options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5)))
+                        if (!TryAcquireSemaphoreForDisposal(_messageReaderSemaphore, waitTimeout, nameof(_messageReaderSemaphore)))
                         {
                             Println("Could not acquire message reader semaphore for disposal");
                         }
                         else
                         {
+                            readerSemaphoreHeld = true;
                             try
                             {
                                 _readFile.Dispose();
@@ -483,10 +483,6 @@ namespace TigaIpc.Messaging
                             catch (Exception ex)
                             {
                                 PrintFailed(ex, "Error disposing read memory mapped file");
-                            }
-                            finally
-                            {
-                                _messageReaderSemaphore?.Release();
                             }
                         }
                     }
@@ -503,8 +499,12 @@ namespace TigaIpc.Messaging
                         }
                     }
 
+                    DisposeSemaphoreBestEffort(_messageReaderSemaphore, nameof(_messageReaderSemaphore), waitTimeout, readerSemaphoreHeld);
+                    DisposeSemaphoreBestEffort(_publishMessageSemaphore, nameof(_publishMessageSemaphore), waitTimeout);
+                    DisposeSemaphoreBestEffort(_invokeMessageLock, nameof(_invokeMessageLock), waitTimeout);
+                    DisposeSemaphoreBestEffort(_invokeLock, nameof(_invokeLock), waitTimeout);
+
                     // Release of other resources
-                    _messageReaderSemaphore?.Dispose();
                     _cancellationTokenSource?.Dispose();
 
                     // release JoinableTaskContext resources
@@ -545,6 +545,8 @@ namespace TigaIpc.Messaging
             {
                 try
                 {
+                    var waitTimeout = _options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5);
+
                     // Unsubscribe event
                     _readFile.FileUpdated -= WhenFileUpdated;
 
@@ -564,7 +566,7 @@ namespace TigaIpc.Messaging
                     // Complete all receive channels
                     foreach (var receiverChannel in _receiverChannels)
                     {
-                        receiverChannel.Value.Writer.Complete();
+                        receiverChannel.Value.Writer.TryComplete();
                     }
 
                     // Waiting to receive task completion
@@ -573,7 +575,7 @@ namespace TigaIpc.Messaging
                         if (_receiverTask != null)
                         {
                             // Use timeout waits to avoid blocking indefinitely
-                            var timeoutTask = Task.Delay(_options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5));
+                            var timeoutTask = Task.Delay(waitTimeout);
                             var completedTask = await Task.WhenAny(_receiverTask, timeoutTask).ConfigureAwait(false);
 
                             if (completedTask == timeoutTask)
@@ -594,19 +596,18 @@ namespace TigaIpc.Messaging
 
                     // Handling memory-mapped files
                     var sameFile = ReferenceEquals(_readFile, _writeFile);
+                    var readerSemaphoreHeld = false;
 
-                    if (_disposeReadFile && _messageReaderSemaphore != null)
+                    if (_disposeReadFile)
                     {
-                        var semaphoreAcquired = await _messageReaderSemaphore
-                            .WaitAsync(_options?.Value?.WaitTimeout ?? TimeSpan.FromSeconds(5))
-                            .ConfigureAwait(false);
-
-                        if (!semaphoreAcquired)
+                        if (!await TryAcquireSemaphoreForDisposalAsync(_messageReaderSemaphore, waitTimeout, nameof(_messageReaderSemaphore))
+                                .ConfigureAwait(false))
                         {
                             PrintWarn("Could not acquire message reader semaphore for async disposal");
                         }
                         else
                         {
+                            readerSemaphoreHeld = true;
                             try
                             {
                                 if (_readFile is IAsyncDisposable asyncDisposable)
@@ -621,10 +622,6 @@ namespace TigaIpc.Messaging
                             catch (Exception ex)
                             {
                                 PrintFailed(ex, "Error disposing read memory mapped file asynchronously");
-                            }
-                            finally
-                            {
-                                _messageReaderSemaphore.Release();
                             }
                         }
                     }
@@ -648,8 +645,15 @@ namespace TigaIpc.Messaging
                         }
                     }
 
+                    DisposeSemaphoreBestEffort(_messageReaderSemaphore, nameof(_messageReaderSemaphore), waitTimeout, readerSemaphoreHeld);
+                    await DisposeSemaphoreBestEffortAsync(_publishMessageSemaphore, nameof(_publishMessageSemaphore), waitTimeout)
+                        .ConfigureAwait(false);
+                    await DisposeSemaphoreBestEffortAsync(_invokeMessageLock, nameof(_invokeMessageLock), waitTimeout)
+                        .ConfigureAwait(false);
+                    await DisposeSemaphoreBestEffortAsync(_invokeLock, nameof(_invokeLock), waitTimeout)
+                        .ConfigureAwait(false);
+
                     // Release of other resources
-                    _messageReaderSemaphore?.Dispose();
                     _cancellationTokenSource?.Dispose();
 
                     // 释放 JoinableTaskContext 资源
@@ -684,13 +688,97 @@ namespace TigaIpc.Messaging
             }
         }
 
+        private static bool TryAcquireSemaphoreForDisposal(SemaphoreSlim semaphore, TimeSpan timeout, string semaphoreName)
+        {
+            try
+            {
+                return semaphore.Wait(timeout);
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+
+        private static async Task<bool> TryAcquireSemaphoreForDisposalAsync(
+            SemaphoreSlim semaphore,
+            TimeSpan timeout,
+            string semaphoreName)
+        {
+            try
+            {
+                return await semaphore.WaitAsync(timeout).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+
+        private void DisposeSemaphoreBestEffort(
+            SemaphoreSlim semaphore,
+            string semaphoreName,
+            TimeSpan timeout,
+            bool alreadyHeld = false)
+        {
+            var acquired = alreadyHeld;
+            try
+            {
+                if (!acquired)
+                {
+                    acquired = TryAcquireSemaphoreForDisposal(semaphore, timeout, semaphoreName);
+                }
+
+                if (!acquired)
+                {
+                    PrintWarn("Could not acquire {SemaphoreName} for disposal", semaphoreName);
+                    return;
+                }
+
+                semaphore.Dispose();
+            }
+            catch (Exception ex)
+            {
+                PrintFailed(ex, "Error disposing semaphore {SemaphoreName}", semaphoreName);
+            }
+        }
+
+        private async Task DisposeSemaphoreBestEffortAsync(
+            SemaphoreSlim semaphore,
+            string semaphoreName,
+            TimeSpan timeout,
+            bool alreadyHeld = false)
+        {
+            var acquired = alreadyHeld;
+            try
+            {
+                if (!acquired)
+                {
+                    acquired = await TryAcquireSemaphoreForDisposalAsync(semaphore, timeout, semaphoreName)
+                        .ConfigureAwait(false);
+                }
+
+                if (!acquired)
+                {
+                    PrintWarn("Could not acquire {SemaphoreName} for async disposal", semaphoreName);
+                    return;
+                }
+
+                semaphore.Dispose();
+            }
+            catch (Exception ex)
+            {
+                PrintFailed(ex, "Error disposing semaphore {SemaphoreName}", semaphoreName);
+            }
+        }
+
         /// <summary>
         /// Resets MessagesSent and MessagesReceived counters
         /// </summary>
         public void ResetMetrics()
         {
 #if NET7_0_OR_GREATER
-            ObjectDisposedException.ThrowIf(disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed, this);
 #else
             if (_disposed)
             {
@@ -800,14 +888,31 @@ namespace TigaIpc.Messaging
             }
         }
 
-        internal Task ReadAsync()
-        {
-            return ReceiveMessagesAsync();
-        }
+        internal Task ReadAsync() => ReadMessagesSafelyAsync();
 
         private void WhenFileUpdated(object? sender, EventArgs args)
         {
-            _ = ReceiveMessagesAsync();
+            _ = ReadAsync();
+        }
+
+        private async Task ReadMessagesSafelyAsync()
+        {
+            try
+            {
+                await ReceiveMessagesAsync().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested || _disposed)
+            {
+                // Disposal and receiver cancellation are expected shutdown paths.
+            }
+            catch (ObjectDisposedException) when (_disposed)
+            {
+                // In-flight fire-and-forget reads may observe disposal during shutdown.
+            }
+            catch (Exception ex) when (!_disposed)
+            {
+                PrintFailed(ex, "Unhandled error in background channel read");
+            }
         }
 
         /// <summary>
@@ -980,7 +1085,9 @@ namespace TigaIpc.Messaging
             bool semaphoreAcquired = false;
             try
             {
-                semaphoreAcquired = await _messageReaderSemaphore.WaitAsync(semaphoreTimeout).ConfigureAwait(false);
+                semaphoreAcquired = await _messageReaderSemaphore
+                    .WaitAsync(semaphoreTimeout, _cancellationTokenSource.Token)
+                    .ConfigureAwait(false);
                 if (!semaphoreAcquired)
                 {
                     PrintWarn("Could not acquire message reader semaphore within timeout period");
@@ -1230,7 +1337,7 @@ namespace TigaIpc.Messaging
             Println($"Starting to handle invoke message");
             _pendingInvokeMessages.Enqueue(postData);
             Println($"Message enqueued, queue size: {_pendingInvokeMessages.Count}");
-            await _invokeMessageLock.WaitAsync();
+            await _invokeMessageLock.WaitAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
             Println($"Acquired semaphore, processing queue");
             try
             {
@@ -1441,8 +1548,14 @@ namespace TigaIpc.Messaging
                 return new LogBook(0, []);
             }
 
-            if (TryDeserializeEnvelope(stream, out var envelope))
+            var payload = GetStreamPayload(stream);
+            if (LooksLikeEnvelope(payload))
             {
+                var envelope = MessagePackSerializer.Deserialize<LogBookEnvelope>(
+                    payload,
+                    MessagePackOptions.Instance
+                );
+
                 if (envelope.SchemaVersion != _logBookSchemaVersion)
                 {
                     throw new InvalidOperationException(
@@ -1457,8 +1570,7 @@ namespace TigaIpc.Messaging
                 throw new InvalidOperationException("Legacy log book payloads are not allowed.");
             }
 
-            stream.Seek(0, SeekOrigin.Begin);
-            return MessagePackSerializer.Deserialize<LogBook>(stream, MessagePackOptions.Instance);
+            return MessagePackSerializer.Deserialize<LogBook>(payload, MessagePackOptions.Instance);
         }
 
         private void WriteLogBook(Stream stream, LogBook logBook)
@@ -1473,16 +1585,55 @@ namespace TigaIpc.Messaging
             MessagePackSerializer.Serialize(stream, envelope, MessagePackOptions.Instance);
         }
 
-        private static bool TryDeserializeEnvelope(Stream stream, out LogBookEnvelope envelope)
+        private static ReadOnlyMemory<byte> GetStreamPayload(Stream stream)
+        {
+            if (stream is MemoryStream memoryStream)
+            {
+                if (memoryStream.TryGetBuffer(out var buffer))
+                {
+                    return buffer.AsMemory(0, checked((int)memoryStream.Length));
+                }
+
+                return memoryStream.ToArray();
+            }
+
+            stream.Seek(0, SeekOrigin.Begin);
+            using var payloadStream = new MemoryStream();
+            stream.CopyTo(payloadStream);
+            return payloadStream.ToArray();
+        }
+
+        private static bool LooksLikeEnvelope(ReadOnlyMemory<byte> payload)
         {
             try
             {
-                envelope = MessagePackSerializer.Deserialize<LogBookEnvelope>(stream, MessagePackOptions.Instance);
-                return true;
+                var reader = new MessagePackReader(new ReadOnlySequence<byte>(payload));
+                if (reader.ReadArrayHeader() != 2)
+                {
+                    return false;
+                }
+
+                reader.Skip();
+                if (reader.NextMessagePackType != MessagePackType.Array)
+                {
+                    return false;
+                }
+
+                if (reader.ReadArrayHeader() != 2)
+                {
+                    return false;
+                }
+
+                if (reader.NextMessagePackType != MessagePackType.Integer)
+                {
+                    return false;
+                }
+
+                reader.Skip();
+                return reader.NextMessagePackType == MessagePackType.Array;
             }
             catch (MessagePackSerializationException)
             {
-                envelope = default;
                 return false;
             }
         }
