@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using TigaIpc;
-using TigaIpc.Messaging;
 using TigaIpc.IO;
+using TigaIpc.Messaging;
 
 internal class Program
 {
