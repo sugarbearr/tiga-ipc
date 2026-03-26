@@ -1,4 +1,4 @@
-using System.IO;
+using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using TigaIpc.IO;
 
@@ -22,8 +22,7 @@ namespace TigaIpc
         /// <summary>
         /// Gets or sets the logical channel name for this IPC topology, default value is process name.
         /// </summary>
-        public string ChannelName { get; set; } =
-            Path.GetFileNameWithoutExtension(Environment.ProcessPath) ?? "unknown";
+        public string ChannelName { get; set; } = GetDefaultChannelName();
 
         /// <summary>
         /// Gets or sets the maximum amount of data that can be written to the file memory mapped file, default is 1 MiB
@@ -120,6 +119,19 @@ namespace TigaIpc
         /// Optional factory for named event wait handle to apply custom ACLs.
         /// </summary>
         public Func<string, EventWaitHandle>? EventWaitHandleFactory { get; set; }
+
+        private static string GetDefaultChannelName()
+        {
+#if NET6_0_OR_GREATER
+            if (!string.IsNullOrWhiteSpace(Environment.ProcessPath))
+            {
+                return Path.GetFileNameWithoutExtension(Environment.ProcessPath) ?? "unknown";
+            }
+#endif
+
+            using var process = Process.GetCurrentProcess();
+            return process.ProcessName;
+        }
 
     }
 }
