@@ -148,6 +148,12 @@ class Program
 
     private static string? ResolveIpcDirectory(string[] args)
     {
+        // DEBUG: 使用固定路径，方便调试
+        var debugPath = Path.Combine(Path.GetTempPath(), "TigaIpc");
+        Directory.CreateDirectory(debugPath);
+        return debugPath;
+
+        /* 生产代码：从参数或环境变量获取
         if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
         {
             return args[0];
@@ -162,6 +168,7 @@ class Program
         Console.Error.WriteLine(
             "IPC directory is required. Pass it as the first argument or set TIGA_IPC_DIRECTORY.");
         return null;
+        */
     }
 
     private static string ResolveChannelName()

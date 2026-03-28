@@ -12,7 +12,6 @@ using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.Threading;
 using TigaIpc.IO;
-using IAsyncDisposable = Microsoft.VisualStudio.Threading.IAsyncDisposable;
 
 namespace TigaIpc.Messaging
 {
@@ -610,7 +609,7 @@ namespace TigaIpc.Messaging
                             readerSemaphoreHeld = true;
                             try
                             {
-                                if (_readFile is IAsyncDisposable asyncDisposable)
+                                if (_readFile is System.IAsyncDisposable asyncDisposable)
                                 {
                                     await asyncDisposable.DisposeAsync().ConfigureAwait(false);
                                 }
@@ -630,7 +629,7 @@ namespace TigaIpc.Messaging
                     {
                         try
                         {
-                            if (_writeFile is IAsyncDisposable asyncDisposable)
+                            if (_writeFile is System.IAsyncDisposable asyncDisposable)
                             {
                                 await asyncDisposable.DisposeAsync().ConfigureAwait(false);
                             }
@@ -657,7 +656,7 @@ namespace TigaIpc.Messaging
                     _cancellationTokenSource?.Dispose();
 
                     // 释放 JoinableTaskContext 资源
-                    if (_joinableTaskContext is IAsyncDisposable asyncDisposableContext)
+                    if (_joinableTaskContext is Microsoft.VisualStudio.Threading.IAsyncDisposable asyncDisposableContext)
                     {
                         try
                         {
@@ -1545,7 +1544,7 @@ namespace TigaIpc.Messaging
         {
             if (stream.Length == 0)
             {
-                return new LogBook(0, []);
+                return new LogBook(0, ImmutableList<LogEntry>.Empty);
             }
 
             var payload = GetStreamPayload(stream);
